@@ -1,0 +1,179 @@
+# ==============================================
+# GITIGNORE - SISTEMA MISIONERO BACKEND
+# ==============================================
+
+# ==============================================
+# ARCHIVOS DE ENTORNO Y CONFIGURACIÓN
+# ==============================================
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+
+# ==============================================
+# NODE.JS Y NPM
+# ==============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ==============================================
+# LOGS
+# ==============================================
+logs/
+*.log
+log/
+*.log.*
+loglevel.json
+
+# ==============================================
+# BASES DE DATOS
+# ==============================================
+# SQLite (en caso de desarrollo local)
+*.sqlite
+*.sqlite3
+*.db
+
+# ==============================================
+# ARCHIVOS TEMPORALES
+# ==============================================
+temp/
+tmp/
+*.tmp
+*.temp
+
+# ==============================================
+# ARCHIVOS SUBIDOS Y REPORTES
+# ==============================================
+uploads/
+reports/
+exports/
+*.pdf
+*.xlsx
+*.xls
+*.csv
+
+# Excepción para archivos de ejemplo
+!uploads/.gitkeep
+!reports/.gitkeep
+!temp/.gitkeep
+
+# ==============================================
+# SISTEMA OPERATIVO
+# ==============================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ==============================================
+# EDITORES E IDEs
+# ==============================================
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Atom
+.atom/
+
+# ==============================================
+# HERRAMIENTAS DE DESARROLLO
+# ==============================================
+.nyc_output/
+coverage/
+.coverage
+*.lcov
+
+# ESLint
+.eslintcache
+
+# Prettier
+.prettierignore
+
+# ==============================================
+# DOCKER
+# ==============================================
+Dockerfile.local
+docker-compose.override.yml
+.dockerignore.local
+
+# ==============================================
+# BACKUPS Y ARCHIVOS DE SEGURIDAD
+# ==============================================
+*.backup
+*.bak
+*.old
+*.orig
+
+# ==============================================
+# CERTIFICADOS Y CLAVES
+# ==============================================
+*.pem
+*.key
+*.crt
+*.cert
+ssl/
+certificates/
+
+# ==============================================
+# ARCHIVOS DE MIGRACIÓN GENERADOS
+# ==============================================
+# Mantener las migraciones pero ignorar backups
+migrations/*.backup
+
+# ==============================================
+# CACHE
+# ==============================================
+.cache/
+*.cache
+
+# ==============================================
+# ARCHIVOS ESPECÍFICOS DEL PROYECTO
+# ==============================================
+# Archivos de configuración local
+config/local.js
+config/development.js
+config/production.js
+
+# Seeds de prueba (mantener solo los de producción)
+seeders/test-*
+seeders/dev-*
+
+# ==============================================
+# ARCHIVOS MISC
+# ==============================================
+*.swp
+*.swo
+*~
+.project
+.settings/
+nbproject/
