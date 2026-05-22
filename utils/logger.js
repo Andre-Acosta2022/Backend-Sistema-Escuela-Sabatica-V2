@@ -1,18 +1,17 @@
 /**
  * LOGGER.JS - Sistema de logging con Winston
- * Sistema de Gestión Misionera
- * 
- * Configuración centralizada para logging de la aplicación
- * con diferentes niveles y salidas
+ * Adaptado para Despliegues en la Nube (Render)
  */
 
 const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 
-// Crear directorio de logs si no existe
+const isProduction = process.env.NODE_ENV === 'production';
 const logDir = 'logs';
-if (!fs.existsSync(logDir)) {
+
+// Solo crear directorios físicos si NO estamos en producción
+if (!isProduction && !fs.existsSync(logDir)) {
   fs.mkdirSync(logDir);
 }
 
@@ -20,9 +19,7 @@ if (!fs.existsSync(logDir)) {
  * Formato personalizado para logs
  */
 const logFormat = winston.format.combine(
-  winston.format.timestamp({
-    format: 'YYYY-MM-DD HH:mm:ss'
-  }),
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.json(),
   winston.format.prettyPrint()
@@ -33,14 +30,11 @@ const logFormat = winston.format.combine(
  */
 const consoleFormat = winston.format.combine(
   winston.format.colorize(),
-  winston.format.timestamp({
-    format: 'HH:mm:ss'
-  }),
+  winston.format.timestamp({ format: 'HH:mm:ss' }),
   winston.format.printf(info => {
     const { timestamp, level, message, ...meta } = info;
     let log = `${timestamp} [${level}]: ${message}`;
     
-    // Agregar metadata si existe
     if (Object.keys(meta).length > 0) {
       log += '\n' + JSON.stringify(meta, null, 2);
     }
@@ -50,107 +44,94 @@ const consoleFormat = winston.format.combine(
 );
 
 /**
- * Configuración de transports (salidas de logs)
+ * Definición Dinámica de Transports
  */
-const transports = [
-  // Logs de error separados
-  new winston.transports.File({
-    filename: path.join(logDir, 'error.log'),
-    level: 'error',
-    format: logFormat,
-    maxsize: 5242880, // 5MB
-    maxFiles: 5,
-  }),
-  
-  // Logs generales
-  new winston.transports.File({
-    filename: path.join(logDir, 'app.log'),
-    format: logFormat,
-    maxsize: 5242880, // 5MB
-    maxFiles: 10,
-  })
-];
+const transports = [];
+const exceptionHandlers = [];
+const rejectionHandlers = [];
 
-// En desarrollo, agregar consola
-if (process.env.NODE_ENV !== 'production') {
+if (isProduction) {
+  // ==========================================
+  // CONFIGURACIÓN PARA PRODUCCIÓN (RENDER)
+  // ==========================================
+  // En la nube, todo va directo a la consola para que Render lo procese
   transports.push(
+    new winston.transports.Console({
+      format: consoleFormat,
+      level: process.env.LOG_LEVEL || 'info'
+    })
+  );
+  
+  exceptionHandlers.push(
+    new winston.transports.Console({ format: consoleFormat })
+  );
+  
+  rejectionHandlers.push(
+    new winston.transports.Console({ format: consoleFormat })
+  );
+} else {
+  // ==========================================
+  // CONFIGURACIÓN PARA DESARROLLO LOCAL
+  // ==========================================
+  // En local guardamos archivos de texto de manera normal
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(logDir, 'error.log'),
+      level: 'error',
+      format: logFormat,
+      maxsize: 5242880,
+      maxFiles: 5,
+    }),
+    new winston.transports.File({
+      filename: path.join(logDir, 'app.log'),
+      format: logFormat,
+      maxsize: 5242880,
+      maxFiles: 10,
+    }),
     new winston.transports.Console({
       format: consoleFormat,
       level: 'debug'
     })
   );
-} else {
-  // En producción, solo errores en consola
-  transports.push(
-    new winston.transports.Console({
-      format: consoleFormat,
-      level: 'error'
-    })
-  );
-}
 
-/**
- * Crear logger principal
- */
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  format: logFormat,
-  transports,
-  
-  // Manejo de excepciones no capturadas
-  exceptionHandlers: [
+  exceptionHandlers.push(
     new winston.transports.File({ 
       filename: path.join(logDir, 'exceptions.log'),
       maxsize: 5242880,
       maxFiles: 3
     })
-  ],
-  
-  // Manejo de promesas rechazadas
-  rejectionHandlers: [
+  );
+
+  rejectionHandlers.push(
     new winston.transports.File({ 
       filename: path.join(logDir, 'rejections.log'),
       maxsize: 5242880,
       maxFiles: 3
     })
-  ]
+  );
+}
+
+/**
+ * Crear logger principal utilizando las configuraciones dinámicas
+ */
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: logFormat,
+  transports,
+  exceptionHandlers,
+  rejectionHandlers
 });
 
 /**
- * Funciones helper para logging específico
+ * Funciones helper para logging específico (Exactamente iguales)
  */
 const logHelpers = {
-  
-  /**
-   * Log de autenticación
-   */
   auth: (action, userId, email, ip, success = true) => {
-    logger.info('Auth Event', {
-      action,
-      userId,
-      email,
-      ip,
-      success,
-      timestamp: new Date().toISOString()
-    });
+    logger.info('Auth Event', { action, userId, email, ip, success, timestamp: new Date().toISOString() });
   },
-  
-  /**
-   * Log de operaciones de base de datos
-   */
   database: (operation, table, recordId, userId) => {
-    logger.info('Database Operation', {
-      operation,
-      table,
-      recordId,
-      userId,
-      timestamp: new Date().toISOString()
-    });
+    logger.info('Database Operation', { operation, table, recordId, userId, timestamp: new Date().toISOString() });
   },
-  
-  /**
-   * Log de errores de API
-   */
   apiError: (req, error, statusCode) => {
     logger.error('API Error', {
       method: req.method,
@@ -164,10 +145,6 @@ const logHelpers = {
       timestamp: new Date().toISOString()
     });
   },
-  
-  /**
-   * Log de requests de API
-   */
   apiRequest: (req, res, responseTime) => {
     logger.info('API Request', {
       method: req.method,
@@ -180,48 +157,18 @@ const logHelpers = {
       timestamp: new Date().toISOString()
     });
   },
-  
-  /**
-   * Log de reportes generados
-   */
   report: (type, format, userId, filters) => {
-    logger.info('Report Generated', {
-      type,
-      format,
-      userId,
-      filters,
-      timestamp: new Date().toISOString()
-    });
+    logger.info('Report Generated', { type, format, userId, filters, timestamp: new Date().toISOString() });
   },
-  
-  /**
-   * Log de operaciones administrativas
-   */
   admin: (action, adminId, targetId, details) => {
-    logger.warn('Admin Operation', {
-      action,
-      adminId,
-      targetId,
-      details,
-      timestamp: new Date().toISOString()
-    });
+    logger.warn('Admin Operation', { action, adminId, targetId, details, timestamp: new Date().toISOString() });
   },
-  
-  /**
-   * Log de seguridad
-   */
   security: (event, ip, userAgent, details) => {
-    logger.warn('Security Event', {
-      event,
-      ip,
-      userAgent,
-      details,
-      timestamp: new Date().toISOString()
-    });
+    logger.warn('Security Event', { event, ip, userAgent, details, timestamp: new Date().toISOString() });
   }
 };
 
-// Agregar helpers al logger principal
+// Adjuntar helpers al objeto instanciado
 Object.assign(logger, logHelpers);
 
 /**
@@ -230,18 +177,16 @@ Object.assign(logger, logHelpers);
 logger.requestMiddleware = () => {
   return (req, res, next) => {
     const start = Date.now();
-    
     res.on('finish', () => {
       const responseTime = Date.now() - start;
       logger.apiRequest(req, res, responseTime);
     });
-    
     next();
   };
 };
 
 /**
- * Stream para Morgan (opcional)
+ * Stream para Morgan
  */
 logger.stream = {
   write: (message) => {
