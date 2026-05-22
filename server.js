@@ -1,26 +1,18 @@
 /**
  * SERVER.JS - Punto de entrada del servidor
  * Sistema de Gestión Misionera
- * 
- * Configuración inicial del servidor Express con:
- * - Carga de variables de entorno
- * - Conexión a base de datos
- * - Configuración de middleware global
- * - Inicialización del servidor HTTP
  */
 
 require('dotenv').config();
 const app = require('./app');
 const db = require('./models');
 const logger = require('./utils/logger');
-const { createDefaultAdmin } = require('./seeders/admin-seeder');
 
-// Puerto del servidor
+// En Render, process.env.PORT se asigna dinámicamente. 0.0.0.0 es necesario para contenedores.
 const PORT = process.env.PORT || 5000;
 
 /**
  * Función para inicializar la base de datos
- * Sincroniza modelos y ejecuta seeders necesarios
  */
 async function initializeDatabase() {
   try {
@@ -30,16 +22,12 @@ async function initializeDatabase() {
     await db.sequelize.authenticate();
     logger.info('✅ Conexión a PostgreSQL establecida correctamente');
     
-    // Sincronizar modelos (crear tablas si no existen)
+    // Sincronizar modelos sin alterar datos en producción
     await db.sequelize.sync({ 
-      force: false, // No eliminar datos existentes
-      alter: process.env.NODE_ENV === 'development' // Solo alterar en desarrollo
+      force: false, 
+      alter: process.env.NODE_ENV === 'development' 
     });
     logger.info('✅ Modelos sincronizados con la base de datos');
-    
-    // Crear administrador por defecto si no existe
-    await createDefaultAdmin();
-    logger.info('✅ Administrador por defecto verificado');
     
   } catch (error) {
     logger.error('❌ Error al inicializar la base de datos:', error);
@@ -52,44 +40,29 @@ async function initializeDatabase() {
  */
 async function startServer() {
   try {
-    // Inicializar base de datos
+    // Inicializar base de datos primero
     await initializeDatabase();
     
-    // Iniciar servidor HTTP
-    const server = app.listen(PORT, () => {
-      logger.info(`🚀 Servidor iniciado en puerto ${PORT}`);
-      logger.info(`🌐 Entorno: ${process.env.NODE_ENV || 'development'}`);
-      logger.info(`📡 URL base: http://localhost:${PORT}/api/v1`);
-      logger.info(`💊 Health check: http://localhost:${PORT}/health`);
-      
-      // Log de configuración importante
-      if (process.env.NODE_ENV === 'production') {
-        logger.info('🔐 Modo producción activado');
-      } else {
-        logger.info('🔧 Modo desarrollo activado');
-        logger.info(`🎯 Frontend CORS: ${process.env.FRONTEND_URL}`);
-      }
+    // Iniciar servidor HTTP escuchando en todas las interfaces para Render
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      logger.info(`🚀 Servidor iniciado exitosamente`);
+      logger.info(`🌐 Entorno activo: ${process.env.NODE_ENV || 'development'}`);
+      logger.info(`📡 Puerto asignado: ${PORT}`);
     });
     
-    // Configurar timeout del servidor
     server.timeout = 30000; // 30 segundos
     
-    // Manejo graceful de cierre del servidor
-    process.on('SIGTERM', () => {
-      logger.info('🛑 SIGTERM recibido. Cerrando servidor...');
+    // Manejo correcto de apagado (Graceful shutdown)
+    const shutdown = (signal) => {
+      logger.info(`🛑 Señal ${signal} recibida. Cerrando servidor de forma segura...`);
       server.close(() => {
-        logger.info('✅ Servidor cerrado correctamente');
+        logger.info('✅ Servidor HTTP cerrado de forma limpia');
         process.exit(0);
       });
-    });
-    
-    process.on('SIGINT', () => {
-      logger.info('🛑 SIGINT recibido. Cerrando servidor...');
-      server.close(() => {
-        logger.info('✅ Servidor cerrado correctamente');
-        process.exit(0);
-      });
-    });
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
     
     return server;
     
@@ -100,20 +73,20 @@ async function startServer() {
 }
 
 /**
- * Manejo global de errores no capturados
+ * Manejo global de excepciones para evitar caídas silenciosas
  */
 process.on('uncaughtException', (error) => {
-  logger.error('💥 Excepción no capturada:', error);
+  logger.error('💥 Excepción crítica no capturada:', error.message);
+  logger.error(error.stack);
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('💥 Promesa rechazada no manejada:', reason);
-  logger.error('En la promesa:', promise);
+  logger.error('💥 Promesa rechazada no controlada:', reason);
   process.exit(1);
 });
 
-// Iniciar servidor
+// Arrancar la aplicación
 if (require.main === module) {
   startServer();
 }
