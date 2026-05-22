@@ -9,7 +9,7 @@
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { defaultAdmin, roles } = require('../config/auth.config');
-const logger = require('../utils/logger');
+const logger = require('./logger');
 
 /**
  * Función principal para crear el administrador por defecto

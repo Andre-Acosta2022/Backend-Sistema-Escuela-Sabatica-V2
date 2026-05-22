@@ -13,8 +13,7 @@
     "db:reset": "npm run migrate:undo && npm run migrate && npm run seed",
     "db:create": "sequelize-cli db:create",
     "db:drop": "sequelize-cli db:drop",
-    "build": "npx sequelize-cli db:migrate && npx sequelize-cli db:seed:all"
-  },
+    "build": "npx sequelize-cli db:migrate"  },
   "keywords": [
     "mission",
     "church",
