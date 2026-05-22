@@ -1157,7 +1157,9 @@ module.exports = {
       await queryInterface.addIndex('Churches', ['email'], { 
         name: 'idx_churches_email',
         unique: true,
-        where: { email: { [Sequelize.Op.ne]: null } },
+        where: {
+          email: Sequelize.literal('"email" IS NOT NULL')
+        },
         transaction 
       });
       await queryInterface.addIndex('Churches', ['status'], { transaction });
@@ -1193,7 +1195,9 @@ module.exports = {
       await queryInterface.addIndex('Members', ['email'], { 
         name: 'idx_members_email',
         unique: true,
-        where: { email: { [Sequelize.Op.ne]: null } },
+        where: {
+          email: Sequelize.literal('"email" IS NOT NULL')
+        },
         transaction 
       });
       await queryInterface.addIndex('Members', ['status'], { transaction });
@@ -1205,7 +1209,9 @@ module.exports = {
       await queryInterface.addIndex('Students', ['certificateNumber'], { 
         name: 'idx_students_certificate',
         unique: true,
-        where: { certificateNumber: { [Sequelize.Op.ne]: null } },
+        where: { 
+          certificateNumber: Sequelize.literal('"certificateNumber" IS NOT NULL')
+      },
         transaction 
       });
       await queryInterface.addIndex('Students', ['status'], { transaction });
@@ -1236,7 +1242,7 @@ module.exports = {
       // Crear semestre inicial
       const currentYear = new Date().getFullYear();
       await queryInterface.bulkInsert('Semesters', [{
-        id: Sequelize.UUIDV4,
+        id: Sequelize.literal('gen_random_uuid()'),
         name: `Primer Semestre ${currentYear}`,
         year: currentYear,
         period: 'first',
@@ -1254,7 +1260,7 @@ module.exports = {
       const hashedPassword = await bcrypt.hash('admin123', 12);
       
       await queryInterface.bulkInsert('Users', [{
-        id: Sequelize.UUIDV4,
+        id: Sequelize.literal('gen_random_uuid()'),
         email: 'admin@sistema-misionero.com',
         password: hashedPassword,
         firstName: 'Administrador',
