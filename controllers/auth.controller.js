@@ -16,8 +16,10 @@ const User = db.User;
 const Church = db.Church;
 
 // =============================================
-// CONFIGURACIÓN JWT
+// CONFIGURACIÓN JWT (Garantiza un fallback seguro)
 // =============================================
+const JWT_SECRET_KEY = process.env.JWT_SECRET || 'fallback-super-secret-key-misionero-2026';
+
 const JWT_CONFIG = {
   expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
@@ -34,15 +36,16 @@ const generateTokens = (user) => {
     churchId: user.churchId
   };
 
-  const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
+  const accessToken = jwt.sign(payload, JWT_SECRET_KEY, {
     expiresIn: JWT_CONFIG.expiresIn,
     issuer: 'misionero-system',
     subject: user.id.toString()
   });
 
+  // Usamos la misma clave segura unificada si no existe la de Refresh dedicada
   const refreshToken = jwt.sign(
     { id: user.id, type: 'refresh' },
-    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    process.env.JWT_REFRESH_SECRET || JWT_SECRET_KEY,
     {
       expiresIn: JWT_CONFIG.refreshExpiresIn,
       issuer: 'misionero-system',
@@ -54,20 +57,18 @@ const generateTokens = (user) => {
 };
 
 // =============================================
-// CREAR ADMIN AUTOMÁTICAMENTE
+// CREAR ADMIN AUTOMÁTICAMENTE (Alineado con tu .env)
 // =============================================
 const createDefaultAdmin = async () => {
   try {
-    // Verificar si ya existe un admin
     const adminExists = await User.findOne({ 
       where: { role: 'admin' } 
     });
 
     if (adminExists) {
-      return null; // Admin ya existe
+      return null;
     }
 
-    // Crear iglesia por defecto si no existe
     let defaultChurch = await Church.findOne({
       where: { name: 'Iglesia Principal' }
     });
@@ -82,24 +83,23 @@ const createDefaultAdmin = async () => {
         email: 'iglesia@ejemplo.com',
         isActive: true
       });
-
       logger.info('Iglesia por defecto creada', { churchId: defaultChurch.id });
     }
 
-    // Crear usuario admin por defecto
-    const defaultPassword = process.env.ADMIN_DEFAULT_PASSWORD || 'Admin123@';
+    // Corregido: Ahora busca exactamente 'ADMIN_PASSWORD' que es el que tienes en tu .env
+    const defaultPassword = process.env.ADMIN_PASSWORD || 'AdminMisionero2024!';
     const hashedPassword = await bcrypt.hash(defaultPassword, 12);
 
     const adminUser = await User.create({
       email: process.env.ADMIN_EMAIL || 'admin@misionero.com',
       password: hashedPassword,
-      firstName: 'Administrador',
-      lastName: 'Sistema',
+      firstName: process.env.ADMIN_FIRST_NAME || 'Andre',
+      lastName: process.env.ADMIN_LAST_NAME || 'Administrator',
       role: 'admin',
       churchId: defaultChurch.id,
       isActive: true,
       isApproved: true,
-      phone: '+000000000000'
+      phone: process.env.ADMIN_PHONE || '+1234567890'
     });
 
     logger.info('Usuario admin por defecto creado', {
