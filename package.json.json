@@ -12,7 +12,8 @@
     "seed:undo": "sequelize-cli db:seed:undo:all",
     "db:reset": "npm run migrate:undo && npm run migrate && npm run seed",
     "db:create": "sequelize-cli db:create",
-    "db:drop": "sequelize-cli db:drop"
+    "db:drop": "sequelize-cli db:drop",
+    "build": "npx sequelize-cli db:migrate && npx sequelize-cli db:seed:all"
   },
   "keywords": [
     "mission",
