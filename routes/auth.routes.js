@@ -11,6 +11,7 @@ const rateLimit = require('express-rate-limit');
 const authController = require('../controllers/auth.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const validateMiddleware = require('../middlewares/validate.middleware');
+const { body } = require('express-validator'); 
 const logger = require('../utils/logger');
 
 // =============================================
@@ -65,7 +66,7 @@ router.post('/request-reset',
   resetLimiter,
   validateMiddleware.sanitizeInput,
   [
-    validateMiddleware.body('email').isEmail().withMessage('Email inválido').normalizeEmail(),
+    body('email').isEmail().withMessage('Email inválido').normalizeEmail(),
     validateMiddleware.handleValidationErrors
   ],
   authController.requestPasswordReset
@@ -75,8 +76,8 @@ router.post('/reset-password',
   passwordLimiter,
   validateMiddleware.sanitizeInput,
   [
-    validateMiddleware.body('token').notEmpty().withMessage('Token requerido').isLength({ min: 32, max: 64 }).withMessage('Token inválido'),
-    validateMiddleware.body('newPassword').isLength({ min: 8 }).withMessage('La nueva contraseña debe tener al menos 8 caracteres')
+    body('token').notEmpty().withMessage('Token requerido').isLength({ min: 32, max: 64 }).withMessage('Token inválido'),
+    body('newPassword').isLength({ min: 8 }).withMessage('La nueva contraseña debe tener al menos 8 caracteres')
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
       .withMessage('La nueva contraseña debe contener al menos: 1 minúscula, 1 mayúscula, 1 número y 1 carácter especial'),
     validateMiddleware.handleValidationErrors
@@ -99,9 +100,9 @@ router.put('/profile',
   authMiddleware.verifyToken,
   validateMiddleware.sanitizeInput,
   [
-    validateMiddleware.body('firstName').optional().trim().isLength({ min: 2, max: 50 }).withMessage('El nombre debe tener entre 2 y 50 caracteres').matches(/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/).withMessage('El nombre solo puede contener letras y espacios'),
-    validateMiddleware.body('lastName').optional().trim().isLength({ min: 2, max: 50 }).withMessage('El apellido debe tener entre 2 y 50 caracteres').matches(/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/).withMessage('El apellido solo puede contener letras y espacios'),
-    validateMiddleware.body('phone').optional().matches(/^[+]?[\d\s\-\(\)]{8,20}$/).withMessage('Teléfono inválido'),
+    body('firstName').optional().trim().isLength({ min: 2, max: 50 }).withMessage('El nombre debe tener entre 2 y 50 caracteres').matches(/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/).withMessage('El nombre solo puede contener letras y espacios'),
+    body('lastName').optional().trim().isLength({ min: 2, max: 50 }).withMessage('El apellido debe tener entre 2 y 50 caracteres').matches(/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/).withMessage('El apellido solo puede contener letras y espacios'),
+    body('phone').optional().matches(/^[+]?[\d\s\-\(\)]{8,20}$/).withMessage('Teléfono inválido'),
     validateMiddleware.handleValidationErrors
   ],
   authController.updateProfile
