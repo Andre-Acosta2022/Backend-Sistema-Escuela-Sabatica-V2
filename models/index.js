@@ -273,24 +273,30 @@ Member.prototype.getAverageIndicators = async function(semesterId = null) {
 };
 
 /**
- * HOOKS GLOBALES DE SEQUELIZE
+ * HOOKS GLOBALES DE SEQUELIZE (CORREGIDO)
  */
 
-// Hook antes de crear cualquier registro
-sequelize.addHook('beforeCreate', (instance, options) => {
-  logger.database('CREATE', instance.constructor.tableName, 'NEW', options.userId || 'system');
-});
-
-// Hook después de actualizar cualquier registro
-sequelize.addHook('afterUpdate', (instance, options) => {
-  logger.database('UPDATE', instance.constructor.tableName, instance.id, options.userId || 'system');
-});
-
-// Hook después de eliminar cualquier registro
-sequelize.addHook('afterDestroy', (instance, options) => {
-  logger.database('DELETE', instance.constructor.tableName, instance.id, options.userId || 'system');
-});
-
+// Usamos el objeto de hooks de la instancia de forma segura
+if (sequelize.options) {
+  sequelize.options.define = sequelize.options.define || {};
+  sequelize.options.define.hooks = {
+    beforeCreate: (instance, options) => {
+      if (logger && typeof logger.database === 'function') {
+        logger.database('CREATE', instance.constructor.tableName || 'unknown', 'NEW', options.userId || 'system');
+      }
+    },
+    afterUpdate: (instance, options) => {
+      if (logger && typeof logger.database === 'function') {
+        logger.database('UPDATE', instance.constructor.tableName || 'unknown', instance.id || 'unknown', options.userId || 'system');
+      }
+    },
+    afterDestroy: (instance, options) => {
+      if (logger && typeof logger.database === 'function') {
+        logger.database('DELETE', instance.constructor.tableName || 'unknown', instance.id || 'unknown', options.userId || 'system');
+      }
+    }
+  };
+}
 /**
  * FUNCIÓN PARA SINCRONIZAR MODELOS
  */
