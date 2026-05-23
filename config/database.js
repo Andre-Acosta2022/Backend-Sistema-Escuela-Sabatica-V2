@@ -148,25 +148,28 @@ const currentEnv = process.env.NODE_ENV || 'development';
 const config = environments[currentEnv];
 
 /**
- * Validar configuración de base de datos
+ * Validar configuración de base de datos (Corregido para Render)
  */
 function validateDatabaseConfig() {
+  // Si estamos usando una URL de conexión unificada, la configuración es válida automáticamente
+  if (config.use_env_variable && process.env[config.use_env_variable]) {
+    return; 
+  }
+
   const requiredFields = ['database', 'username'];
   
   for (const field of requiredFields) {
-    if (!config[field] && !config.use_env_variable) {
+    if (!config[field]) {
       throw new Error(`Configuración de base de datos incompleta: falta ${field}`);
     }
   }
   
-  if (!config.use_env_variable) {
-    if (!config.password && currentEnv === 'production') {
-      throw new Error('Password de base de datos requerido en producción');
-    }
-    
-    if (!config.host) {
-      throw new Error('Host de base de datos no especificado');
-    }
+  if (!config.password && currentEnv === 'production') {
+    throw new Error('Password de base de datos requerido en producción');
+  }
+  
+  if (!config.host) {
+    throw new Error('Host de base de datos no especificado');
   }
 }
 
@@ -216,12 +219,13 @@ async function testConnection(sequelize) {
   }
 }
 
-// Validar configuración al cargar el módulo
+// Validar configuración de forma segura al cargar el módulo
 try {
   validateDatabaseConfig();
 } catch (error) {
-  console.error('❌ Error en configuración de base de datos:', error.message);
-  process.exit(1);
+  console.error('❌ Error crítico en configuración de base de datos:', error.message);
+  // Evitamos el process.exit(1) inmediato para permitir que el logger capture el stack trace completo
+  throw error; 
 }
 
 // Exportar configuraciones
