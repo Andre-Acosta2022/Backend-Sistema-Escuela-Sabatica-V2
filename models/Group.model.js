@@ -356,21 +356,27 @@ module.exports = (sequelize, DataTypes) => {
     // Índices para mejorar rendimiento
     indexes: [
       {
+        name: 'idx_groups_church_id',
         fields: ['churchId']
       },
       {
+        name: 'idx_groups_leader_id',
         fields: ['leaderId']
       },
       {
+        name: 'idx_groups_type_category',
         fields: ['type', 'category']
       },
       {
+        name: 'idx_groups_is_active_status',
         fields: ['isActive', 'status']
       },
       {
+        name: 'idx_groups_meeting_day_time',
         fields: ['meetingDay', 'meetingTime']
       },
       {
+        name: 'idx_groups_start_end_date',
         fields: ['startDate', 'endDate']
       }
     ],

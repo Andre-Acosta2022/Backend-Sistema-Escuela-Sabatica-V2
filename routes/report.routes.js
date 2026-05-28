@@ -1,8 +1,7 @@
 /**
  * REPORT.ROUTES.JS - Rutas de reportes consolidados
  * Sistema de Gestión Misionera
- * 
- * Define todas las rutas relacionadas con reportes y análisis
+ * * Define todas las rutas relacionadas con reportes y análisis
  * Incluye restricciones de acceso y rate limiting para reportes complejos
  */
 
@@ -10,7 +9,7 @@ const express = require('express');
 const router = express.Router();
 
 // Middlewares
-const { verifyToken, isAdmin, isDirector, isLeader } = require('../middlewares/auth.middleware');
+const { verifyToken, isDirector, isLeader } = require('../middlewares/auth.middleware');
 
 // Controladores
 const {
@@ -53,13 +52,13 @@ const comparativeReportLimit = rateLimit({
  * @query   semesterId, includeInactive
  * @rateLimit reportLimit
  * @features 
- *   - Información básica del grupo
- *   - Estadísticas de miembros
- *   - Indicadores espirituales
- *   - Métricas de desempeño
- *   - Estudiantes bíblicos
- *   - Análisis de crecimiento
- *   - Resumen ejecutivo
+ * - Información básica del grupo
+ * - Estadísticas de miembros
+ * - Indicadores espirituales
+ * - Métricas de desempeño
+ * - Estudiantes bíblicos
+ * - Análisis de crecimiento
+ * - Resumen ejecutivo
  */
 router.get('/group/:groupId',
   verifyToken,
@@ -75,10 +74,10 @@ router.get('/group/:groupId',
  * @query   semesterId, includeInactive
  * @rateLimit reportLimit
  * @features
- *   - Consolidación de todos los grupos
- *   - Estadísticas generales de la iglesia
- *   - Reportes individuales por grupo
- *   - Análisis comparativo interno
+ * - Consolidación de todos los grupos
+ * - Estadísticas generales de la iglesia
+ * - Reportes individuales por grupo
+ * - Análisis comparativo interno
  */
 router.get('/church/:churchId',
   verifyToken,
@@ -94,14 +93,14 @@ router.get('/church/:churchId',
  * @body    { groupIds: [array], semesterId?: string }
  * @rateLimit comparativeReportLimit
  * @features
- *   - Comparación de métricas clave
- *   - Rankings por categorías
- *   - Análisis de mejores prácticas
- *   - Identificación de grupos que necesitan atención
- *   - Insights y recomendaciones
+ * - Comparación de métricas clave
+ * - Rankings por categorías
+ * - Análisis de mejores prácticas
+ * - Identificación de grupos que necesitan atención
+ * - Insights y recomendaciones
  * @restrictions
- *   - Mínimo 2 grupos, máximo 10 grupos
- *   - Usuario debe tener acceso a todos los grupos solicitados
+ * - Mínimo 2 grupos, máximo 10 grupos
+ * - Usuario debe tener acceso a todos los grupos solicitados
  */
 router.post('/comparative',
   verifyToken,

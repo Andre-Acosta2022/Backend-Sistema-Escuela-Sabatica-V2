@@ -11,6 +11,7 @@ const { promisify } = require('util');
 const db = require('../models');
 const User = db.User;
 const logger = require('../utils/logger');
+const rateLimit = require('express-rate-limit');
 
 // =============================================
 // CONSTANTES DE ROLES Y JERARQUÍA
@@ -500,13 +501,41 @@ const canAccess = (userRole, requiredRole) => {
 };
 
 // =============================================
+// LIMITADORES DE PETICIONES (RATE LIMITERS)
+// =============================================
+const rateLimiter = {
+  // Limita la creación de usuarios a 5 por cada 15 minutos por IP
+  createUser: rateLimit({
+    windowMs: 15 * 60 * 1000, 
+    max: 5, 
+    message: { 
+      success: false, 
+      message: 'Demasiadas solicitudes de creación de cuenta. Intente más tarde.' 
+    }
+  }),
+
+  // Limita el reseteo de contraseñas a 3 intentos por hora
+  resetPassword: rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 3, 
+    message: { 
+      success: false, 
+      message: 'Demasiados intentos de reseteo de contraseña. Intente en una hora.' 
+    }
+  })
+};
+
+
+// =============================================
 // EXPORTAR MIDDLEWARE
 // =============================================
 module.exports = {
   // Middleware principales
   verifyToken,
   hasRoleOrAbove,
+  rateLimiter, // <- AGREGAR AQUÍ
   optionalAuth,
+  
   
   // Middleware de roles específicos
   isAdmin,

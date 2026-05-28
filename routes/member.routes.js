@@ -1,15 +1,26 @@
 /**
  * MEMBER.ROUTES.JS - Rutas para gestión de miembros
  * Sistema de Gestión Misionera
- * 
- * Define todas las rutas API para operaciones CRUD de miembros
+ * * Define todas las rutas API para operaciones CRUD de miembros
  * con validaciones, autenticación y control de permisos por rol
  */
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { authJwt, validate } = require('../middlewares');
 const memberController = require('../controllers/member.controller');
+
+// 1. Importar exactamente lo que exporta auth.middleware.js
+const { 
+  verifyToken, 
+  isLeader, 
+  isDirector, 
+  isReader 
+} = require('../middlewares/auth.middleware');
+
+// 2. Importar exactamente lo que exporta validate.middleware.js
+const { 
+  validateMember
+} = require('../middlewares/validate.middleware');
 
 const router = express.Router();
 
@@ -40,7 +51,7 @@ const createMemberRateLimit = rateLimit({
 // APLICAR MIDDLEWARES GLOBALES
 // =============================================================================
 router.use(memberRateLimit);
-router.use([authJwt.verifyToken]);
+router.use(verifyToken); // <- CORREGIDO
 
 // =============================================================================
 // RUTAS DE MIEMBROS POR GRUPO
@@ -57,8 +68,8 @@ router.post(
   '/:groupId/members',
   [
     createMemberRateLimit,
-    authJwt.hasRole(['admin', 'director', 'leader']),
-    validate.validateMember
+    isLeader, // <- CORREGIDO
+    validateMember // <- CORREGIDO
   ],
   memberController.createMember
 );
@@ -72,7 +83,7 @@ router.post(
  */
 router.get(
   '/:groupId/members',
-  [authJwt.hasRole(['admin', 'director', 'leader', 'reader'])],
+  [isReader], // <- CORREGIDO
   memberController.getMembersByGroup
 );
 
@@ -84,7 +95,7 @@ router.get(
  */
 router.get(
   '/:groupId/members/stats',
-  [authJwt.hasRole(['admin', 'director', 'leader', 'reader'])],
+  [isReader], // <- CORREGIDO
   memberController.getMemberStats
 );
 
@@ -100,7 +111,7 @@ router.get(
  */
 router.get(
   '/members/:id',
-  [authJwt.hasRole(['admin', 'director', 'leader', 'reader'])],
+  [isReader], // <- CORREGIDO
   memberController.getMemberById
 );
 
@@ -114,8 +125,8 @@ router.get(
 router.put(
   '/members/:id',
   [
-    authJwt.hasRole(['admin', 'director', 'leader']),
-    validate.validateMemberUpdate
+    isLeader, // <- CORREGIDO
+    validateMember // <- CORREGIDO (usando validación base)
   ],
   memberController.updateMember
 );
@@ -129,7 +140,7 @@ router.put(
  */
 router.delete(
   '/members/:id',
-  [authJwt.hasRole(['admin', 'director', 'leader'])],
+  [isLeader], // <- CORREGIDO
   memberController.deleteMember
 );
 
@@ -145,7 +156,7 @@ router.delete(
  */
 router.post(
   '/members/:id/activate',
-  [authJwt.hasRole(['admin', 'director', 'leader'])],
+  [isLeader], // <- CORREGIDO
   async (req, res) => {
     try {
       const { Member, Group, User } = require('../models');
@@ -214,7 +225,7 @@ router.post(
  */
 router.get(
   '/members/search',
-  [authJwt.hasRole(['admin', 'director'])],
+  [isDirector], // <- CORREGIDO
   async (req, res) => {
     try {
       const { Member, Group, Church } = require('../models');

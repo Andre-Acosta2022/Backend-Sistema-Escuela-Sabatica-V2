@@ -529,29 +529,37 @@ module.exports = (sequelize, DataTypes) => {
     indexes: [
       // Índice único para evitar métricas duplicadas por período
       {
+       name: 'idx_metrics_group_period_unique',
         unique: true,
         fields: ['groupId', 'periodType', 'periodStart', 'periodEnd']
       },
       // Índices para consultas frecuentes
       {
+     name: 'idx_metrics_group_id',
         fields: ['groupId']
       },
       {
+     name: 'idx_metrics_semester_id',
         fields: ['semesterId']
       },
       {
+     name: 'idx_metrics_period_type',
         fields: ['periodType']
       },
       {
+     name: 'idx_metrics_status',
         fields: ['status']
       },
       {
+        name: 'idx_metrics_created_by',
         fields: ['createdBy']
       },
       {
+        name: 'idx_metrics_approved_by',
         fields: ['approvedBy']
       },
       {
+        name: 'idx_metrics_created_at',
         fields: ['createdAt']
       }
     ],

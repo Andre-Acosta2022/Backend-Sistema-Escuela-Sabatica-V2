@@ -104,8 +104,14 @@ module.exports = (sequelize, DataTypes) => {
     underscored: true,
     
     indexes: [
-      { fields: ['memberId', 'evaluationDate'] },
-      { fields: ['semesterId'] }
+ {
+        name: 'idx_indicators_member_id_evaluation_date',
+        fields: ['member_id', 'evaluation_date'] // 🌟 CORREGIDO: Mismo nombre físico de la BD
+      },
+      {
+        name: 'idx_indicators_semester_id',
+        fields: ['semester_id'] // 🌟 CORREGIDO: Mismo nombre físico de la BD
+      }
     ]
   });
 

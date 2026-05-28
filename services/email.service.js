@@ -1,8 +1,7 @@
 /**
  * EMAIL.SERVICE.JS - Servicio de emails y notificaciones
  * Sistema de Gestión Misionera
- * 
- * Maneja el envío de emails para:
+ * * Maneja el envío de emails para:
  * - Notificaciones de nuevos usuarios
  * - Reportes automáticos
  * - Alertas de sistema
@@ -19,7 +18,7 @@ const initializeEmailService = () => {
   try {
     // Configuración para diferentes proveedores
     if (process.env.EMAIL_PROVIDER === 'smtp') {
-      transporter = nodemailer.createTransporter({
+      transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
         port: process.env.SMTP_PORT || 587,
         secure: process.env.SMTP_SECURE === 'true',
@@ -29,7 +28,7 @@ const initializeEmailService = () => {
         }
       });
     } else if (process.env.EMAIL_PROVIDER === 'sendgrid') {
-      transporter = nodemailer.createTransporter({
+      transporter = nodemailer.createTransport({
         service: 'SendGrid',
         auth: {
           user: 'apikey',
@@ -38,7 +37,7 @@ const initializeEmailService = () => {
       });
     } else {
       // Gmail por defecto (para desarrollo)
-      transporter = nodemailer.createTransporter({
+      transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
           user: process.env.EMAIL_USER,
@@ -137,38 +136,40 @@ const emailTemplates = {
     `
   }),
 
-  // Template para reporte semanal automático
+  // Template para reporte semanal automático (Optimizado para compatibilidad de correo electrónico)
   weeklyReport: (reportData) => ({
     subject: `📊 Reporte Semanal - ${reportData.groupName}`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background-color: #2196F3; color: white; padding: 20px; text-align: center;">
-          <h1>📊 Reporte Semanal</h1>
-          <h2>${reportData.groupName}</h2>
+          <h1 style="margin: 0;">📊 Reporte Semanal</h1>
+          <h2 style="margin: 10px 0 0 0;">${reportData.groupName}</h2>
         </div>
         <div style="padding: 20px; background-color: #f9f9f9;">
           <h3>Resumen de la Semana (${reportData.weekStart} - ${reportData.weekEnd})</h3>
           
-          <div style="display: flex; justify-content: space-between; margin: 20px 0;">
-            <div style="background-color: white; padding: 15px; border-radius: 8px; text-align: center; flex: 1; margin: 0 5px;">
-              <h4 style="color: #4CAF50; margin: 0;">👥 Asistencia</h4>
-              <p style="font-size: 24px; font-weight: bold; margin: 5px 0;">${reportData.attendance}</p>
-            </div>
-            <div style="background-color: white; padding: 15px; border-radius: 8px; text-align: center; flex: 1; margin: 0 5px;">
-              <h4 style="color: #FF9800; margin: 0;">👋 Visitantes</h4>
-              <p style="font-size: 24px; font-weight: bold; margin: 5px 0;">${reportData.newVisitors}</p>
-            </div>
-            <div style="background-color: white; padding: 15px; border-radius: 8px; text-align: center; flex: 1; margin: 0 5px;">
-              <h4 style="color: #9C27B0; margin: 0;">💝 Ofrendas</h4>
-              <p style="font-size: 20px; font-weight: bold; margin: 5px 0;">$${reportData.offerings}</p>
-            </div>
-          </div>
+          <table border="0" cellpadding="0" cellspacing="10" width="100%" style="margin: 20px 0;">
+            <tr>
+              <td width="33%" bgcolor="#ffffff" style="padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <h4 style="color: #4CAF50; margin: 0; font-size: 14px;">👥 Asistencia</h4>
+                <p style="font-size: 24px; font-weight: bold; margin: 5px 0; color: #333;">${reportData.attendance}</p>
+              </td>
+              <td width="33%" bgcolor="#ffffff" style="padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <h4 style="color: #FF9800; margin: 0; font-size: 14px;">👋 Visitantes</h4>
+                <p style="font-size: 24px; font-weight: bold; margin: 5px 0; color: #333;">${reportData.newVisitors}</p>
+              </td>
+              <td width="33%" bgcolor="#ffffff" style="padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <h4 style="color: #9C27B0; margin: 0; font-size: 14px;">💝 Ofrendas</h4>
+                <p style="font-size: 20px; font-weight: bold; margin: 5px 0; color: #333;">$${reportData.offerings}</p>
+              </td>
+            </tr>
+          </table>
           
-          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h4>📈 Progreso Espiritual Promedio</h4>
+          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <h4 style="margin-top: 0;">📈 Progreso Espiritual Promedio</h4>
             <div style="background-color: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden;">
               <div style="background-color: #4CAF50; height: 100%; width: ${(reportData.spiritualScore / 5) * 100}%; 
-                          display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                          display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px;">
                 ${reportData.spiritualScore}/5.0
               </div>
             </div>
@@ -176,8 +177,8 @@ const emailTemplates = {
           
           ${reportData.highlights ? `
             <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <h4>⭐ Aspectos Destacados:</h4>
-              <p>${reportData.highlights}</p>
+              <h4 style="margin-top: 0;">⭐ Aspectos Destacados:</h4>
+              <p style="margin-bottom: 0;">${reportData.highlights}</p>
             </div>
           ` : ''}
           
@@ -283,14 +284,14 @@ const sendEmail = async (to, template, templateData) => {
   }
 };
 
-// Notificar nuevo usuario a administradores
+// Notificar nuevo usuario a administradores (Ejecución secuencial controlada para evitar Rate Limiting)
 const notifyNewUser = async (userData, adminEmails) => {
   try {
-    const results = await Promise.all(
-      adminEmails.map(email => 
-        sendEmail(email, 'newUserRegistration', userData)
-      )
-    );
+    const results = [];
+    for (const email of adminEmails) {
+      const res = await sendEmail(email, 'newUserRegistration', userData);
+      results.push(res);
+    }
 
     const successful = results.filter(r => r.success).length;
     const failed = results.length - successful;
@@ -327,14 +328,14 @@ const notifyUserApproval = async (userData) => {
   }
 };
 
-// Enviar reporte semanal automático
+// Enviar reporte semanal automático (Ejecución secuencial controlada)
 const sendWeeklyReport = async (reportData, recipientEmails) => {
   try {
-    const results = await Promise.all(
-      recipientEmails.map(email => 
-        sendEmail(email, 'weeklyReport', reportData)
-      )
-    );
+    const results = [];
+    for (const email of recipientEmails) {
+      const res = await sendEmail(email, 'weeklyReport', reportData);
+      results.push(res);
+    }
 
     const successful = results.filter(r => r.success).length;
     const failed = results.length - successful;
@@ -356,14 +357,14 @@ const sendWeeklyReport = async (reportData, recipientEmails) => {
   }
 };
 
-// Enviar alerta del sistema
+// Enviar alerta del sistema (Ejecución secuencial controlada)
 const sendSystemAlert = async (alertData, adminEmails) => {
   try {
-    const results = await Promise.all(
-      adminEmails.map(email => 
-        sendEmail(email, 'systemAlert', alertData)
-      )
-    );
+    const results = [];
+    for (const email of adminEmails) {
+      const res = await sendEmail(email, 'systemAlert', alertData);
+      results.push(res);
+    }
 
     const successful = results.filter(r => r.success).length;
     const failed = results.length - successful;

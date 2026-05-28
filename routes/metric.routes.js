@@ -1,14 +1,16 @@
 /**
  * METRIC.ROUTES.JS - Rutas para gestión de métricas
  * Sistema de Gestión Misionera
- * 
- * Define todas las rutas API para operaciones CRUD de métricas
+ * * Define todas las rutas API para operaciones CRUD de métricas
  * con validaciones, autenticación y control de permisos por rol
  */
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { authJwt, validate } = require('../middlewares');
+
+// Importaciones corregidas
+const { verifyToken, isReader, isLeader, isDirector } = require('../middlewares/auth.middleware');
+const { validateMetric } = require('../middlewares/validate.middleware');
 const metricController = require('../controllers/metric.controller');
 
 const router = express.Router();
@@ -38,7 +40,7 @@ const createMetricRateLimit = rateLimit({
 // APLICAR MIDDLEWARES GLOBALES
 // =============================================================================
 router.use(metricRateLimit);
-router.use([authJwt.verifyToken]);
+router.use(verifyToken); // <- CORREGIDO
 
 // =============================================================================
 // RUTAS DE MÉTRICAS POR GRUPO
@@ -53,11 +55,9 @@ router.use([authJwt.verifyToken]);
  */
 router.post(
   '/:groupId/metrics',
-  [
-    createMetricRateLimit,
-    authJwt.hasRole(['admin', 'director', 'leader']),
-    validate.validateMetric
-  ],
+  createMetricRateLimit,
+  isLeader, // <- CORREGIDO
+  validateMetric, // <- CORREGIDO
   metricController.createMetric
 );
 
@@ -70,7 +70,7 @@ router.post(
  */
 router.get(
   '/:groupId/metrics',
-  [authJwt.hasRole(['admin', 'director', 'leader', 'reader'])],
+  isReader, // <- CORREGIDO
   metricController.getMetricsByGroup
 );
 
@@ -83,7 +83,7 @@ router.get(
  */
 router.get(
   '/:groupId/metrics/stats',
-  [authJwt.hasRole(['admin', 'director', 'leader', 'reader'])],
+  isReader, // <- CORREGIDO
   metricController.getMetricStats
 );
 
@@ -99,7 +99,7 @@ router.get(
  */
 router.get(
   '/metrics/:id',
-  [authJwt.hasRole(['admin', 'director', 'leader', 'reader'])],
+  isReader, // <- CORREGIDO
   metricController.getMetricById
 );
 
@@ -112,10 +112,8 @@ router.get(
  */
 router.put(
   '/metrics/:id',
-  [
-    authJwt.hasRole(['admin', 'director', 'leader']),
-    validate.validateMetricUpdate
-  ],
+  isLeader, // <- CORREGIDO
+  validateMetric, // <- CORREGIDO (usando validación base)
   metricController.updateMetric
 );
 
@@ -127,7 +125,7 @@ router.put(
  */
 router.delete(
   '/metrics/:id',
-  [authJwt.hasRole(['admin', 'director', 'leader'])],
+  isLeader, // <- CORREGIDO
   metricController.deleteMetric
 );
 
@@ -143,7 +141,7 @@ router.delete(
  */
 router.get(
   '/metrics/compare/groups',
-  [authJwt.hasRole(['admin', 'director'])],
+  isDirector, // <- CORREGIDO
   metricController.compareGroupMetrics
 );
 
@@ -155,7 +153,7 @@ router.get(
  */
 router.get(
   '/metrics/reports/trends',
-  [authJwt.hasRole(['admin', 'director'])],
+  isDirector, // <- CORREGIDO
   async (req, res) => {
     try {
       const { Metric, Group, Church, Semester } = require('../models');
@@ -283,7 +281,4 @@ router.get(
   }
 );
 
-// =============================================================================
-// EXPORTAR ROUTER
-// =============================================================================
 module.exports = router;

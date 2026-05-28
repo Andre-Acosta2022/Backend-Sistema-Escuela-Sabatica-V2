@@ -1,1306 +1,626 @@
 /**
- * REPORT.SERVICE.JS - Servicio de Generación de Reportes
+ * REPORT.SERVICE.JS - Servicio Unificado de Reportes Consolidados
  * Sistema de Gestión Misionera
- * 
- * Genera reportes complejos, exporta a Excel/PDF y realiza análisis estadísticos
- * Maneja reportes personalizados según rol de usuario con optimización de consultas
  */
-
 const { Op, Sequelize } = require('sequelize');
-const ExcelJS = require('exceljs');
-const PDFDocument = require('pdfkit');
-const fs = require('fs').promises;
-const path = require('path');
 const db = require('../models');
-const { 
-  calculationHelpers, 
-  dateHelpers, 
-  arrayHelpers, 
-  responseHelpers,
-  formatHelpers
-} = require('./helpers');
-const { CHART_COLORS, ROLES, ROLE_HIERARCHY, REPORT_TYPES, MESSAGES } = require('./constants');
+const { NotFoundError } = require('../middlewares/error.middleware');
 
-// Destructuring de modelos
+// Destructuring corregido de modelos integrados de la base de datos
 const { 
-  User, 
-  Church, 
   Group, 
   Member, 
-  BibleStudent, 
-  GroupMetric, 
-  SpiritualIndicator, 
-  Semester 
+  Indicator,      // Mapeado de forma única para indicadores espirituales
+  Metric, 
+  Student,        // Estandarizado (en vez de BibleStudent)
+  Church, 
+  User, 
+  Semester,
+  GroupMetric
 } = db;
 
+// =============================================================================
+// IMPORTACIÓN Y ADAPTACIÓN DE TU HELPER DE UTILS
+// =============================================================================
+const baseHelpers = require('../utils/helpers');
+
+// Enlazamos tus helpers reales adaptando los métodos exactos que pide el servicio
+const calculationHelpers = baseHelpers.calculationHelpers;
+const arrayHelpers = {
+  ...baseHelpers.arrayHelpers,
+  indexBy: baseHelpers.arrayHelpers.arrayToMap // Mapea tu función arrayToMap al nombre esperado
+};
+
+const dateHelpers = {
+  ...baseHelpers.dateHelpers,
+  // Agregamos este método rápido para que entienda los trimestres numéricos del reporte
+  getQuarterRange: (year, quarter) => {
+    const quartersMap = { 1: 'first', 2: 'second', 3: 'third', 4: 'fourth' };
+    const period = quartersMap[quarter] || 'first';
+    const range = baseHelpers.dateHelpers.getDateRange(period, year);
+    return {
+      start: new Date(`${range.start}T00:00:00.000Z`),
+      end: new Date(`${range.end}T23:59:59.999Z`)
+    };
+  }
+};
+
+// Modificamos responseHelpers para que no choque con las respuestas HTTP del controlador
+const responseHelpers = {
+  success: (data) => data
+};
 class ReportService {
 
-  // =============================================
-  // REPORTES PRINCIPALES
-  // =============================================
+  // =============================================================================
+  // LÓGICA OPERATIVA / DETALLADA POR ENTIDADES
+  // =============================================================================
 
-  /**
-   * Genera reporte completo de grupo
-   * @param {number} groupId - ID del grupo
-   * @param {string} userRole - Rol del usuario
-   * @param {number} userId - ID del usuario
-   * @param {Object} options - Opciones del reporte
-   * @returns {Object} Reporte completo del grupo
-   */
-  async generateGroupReport(groupId, userRole, userId, options = {}) {
-    try {
-      // Validar permisos
-      await this._validateReportPermissions(groupId, userRole, userId);
+  async getGroupReportData(groupId, queryParams, authUser) {
+    const { semesterId, includeInactive = false } = queryParams;
 
-      const dateRange = this._getReportDateRange(options.period);
-      
-      // Obtener datos base del grupo
-      const groupData = await this._getGroupBaseData(groupId);
-      if (!groupData) {
-        throw new Error(MESSAGES.ERRORS.GROUP_NOT_FOUND);
-      }
-
-      // Obtener todos los componentes del reporte
-      const [
-        membersData,
-        studentsData,
-        metricsData,
-        indicatorsData,
-        statisticalAnalysis
-      ] = await Promise.all([
-        this._getGroupMembersData(groupId, dateRange),
-        this._getGroupStudentsData(groupId, dateRange),
-        this._getGroupMetricsData(groupId, dateRange),
-        this._getSpiritualIndicatorsData(groupId, dateRange),
-        this._generateStatisticalAnalysis(groupId, dateRange)
-      ]);
-
-      // Generar resumen ejecutivo
-      const executiveSummary = this._generateExecutiveSummary({
-        group: groupData,
-        members: membersData,
-        students: studentsData,
-        metrics: metricsData,
-        indicators: indicatorsData,
-        analysis: statisticalAnalysis
-      });
-
-      const report = {
-        metadata: {
-          reportId: this._generateReportId(),
-          groupId,
-          groupName: groupData.name,
-          generatedAt: new Date().toISOString(),
-          generatedBy: userId,
-          period: options.period || 'current_quarter',
-          dateRange,
-          reportType: 'complete_group_report'
-        },
-        executiveSummary,
-        groupInfo: groupData,
-        members: membersData,
-        bibleStudents: studentsData,
-        metrics: metricsData,
-        spiritualIndicators: indicatorsData,
-        statisticalAnalysis,
-        recommendations: this._generateRecommendations(statisticalAnalysis)
-      };
-
-      return responseHelpers.success(report);
-    } catch (error) {
-      console.error('Error generando reporte de grupo:', error);
-      throw new Error(`Error generando reporte: ${error.message}`);
-    }
-  }
-
-  /**
-   * Genera reporte consolidado por iglesia
-   */
-  async generateChurchReport(churchId, userRole, userId, options = {}) {
-    try {
-      await this._validateChurchReportPermissions(churchId, userRole, userId);
-
-      const dateRange = this._getReportDateRange(options.period);
-
-      // Datos base de la iglesia
-      const churchData = await Church.findByPk(churchId, {
-        attributes: ['id', 'name', 'address', 'phone', 'email', 'capacity', 'pastor']
-      });
-
-      if (!churchData) {
-        throw new Error(MESSAGES.ERRORS.CHURCH_NOT_FOUND);
-      }
-
-      // Grupos de la iglesia
-      const groupsData = await Group.findAll({
-        where: { churchId, status: 'active' },
-        include: [
-          {
-            model: User,
-            as: 'leader',
-            attributes: ['firstName', 'lastName', 'email', 'phone']
-          }
-        ],
-        attributes: ['id', 'name', 'type', 'category', 'currentCapacity', 'maxCapacity']
-      });
-
-      // Métricas consolidadas
-      const consolidatedMetrics = await this._getConsolidatedChurchMetrics(churchId, dateRange);
-
-      // Análisis comparativo entre grupos
-      const groupComparison = await this._generateGroupComparison(
-        groupsData.map(g => g.id), 
-        dateRange
-      );
-
-      const report = {
-        metadata: {
-          reportId: this._generateReportId(),
-          churchId,
-          churchName: churchData.name,
-          generatedAt: new Date().toISOString(),
-          generatedBy: userId,
-          period: options.period || 'current_quarter',
-          dateRange,
-          reportType: 'church_consolidated_report'
-        },
-        churchInfo: churchData,
-        groups: groupsData,
-        consolidatedMetrics,
-        groupComparison,
-        trends: await this._getChurchTrends(churchId, dateRange),
-        executiveSummary: this._generateChurchExecutiveSummary(consolidatedMetrics, groupsData)
-      };
-
-      return responseHelpers.success(report);
-    } catch (error) {
-      console.error('Error generando reporte de iglesia:', error);
-      throw new Error(`Error generando reporte de iglesia: ${error.message}`);
-    }
-  }
-
-  /**
-   * Genera reporte estadístico avanzado
-   */
-  async generateStatisticalReport(filters, userRole, userId, options = {}) {
-    try {
-      const whereConditions = this._buildReportFilters(filters, userRole, userId);
-      const dateRange = this._getReportDateRange(options.period);
-
-      // Análisis demográfico
-      const demographicAnalysis = await this._getDemographicAnalysis(whereConditions, dateRange);
-
-      // Análisis de crecimiento
-      const growthAnalysis = await this._getGrowthAnalysis(whereConditions, dateRange);
-
-      // Análisis de patrones
-      const patternAnalysis = await this._getPatternAnalysis(whereConditions, dateRange);
-
-      // Predicciones y proyecciones
-      const projections = await this._generateProjections(whereConditions, dateRange);
-
-      const report = {
-        metadata: {
-          reportId: this._generateReportId(),
-          generatedAt: new Date().toISOString(),
-          generatedBy: userId,
-          period: options.period || 'current_year',
-          dateRange,
-          reportType: 'statistical_analysis_report',
-          filters
-        },
-        demographicAnalysis,
-        growthAnalysis,
-        patternAnalysis,
-        projections,
-        insights: this._generateStatisticalInsights({
-          demographic: demographicAnalysis,
-          growth: growthAnalysis,
-          patterns: patternAnalysis
-        })
-      };
-
-      return responseHelpers.success(report);
-    } catch (error) {
-      console.error('Error generando reporte estadístico:', error);
-      throw new Error(`Error generando reporte estadístico: ${error.message}`);
-    }
-  }
-
-  // =============================================
-  // EXPORTACIÓN DE REPORTES
-  // =============================================
-
-  /**
-   * Exporta reporte a Excel
-   */
-  async exportToExcel(reportData, options = {}) {
-    try {
-      const workbook = new ExcelJS.Workbook();
-      
-      // Metadatos del libro
-      workbook.creator = 'Sistema de Gestión Misionera';
-      workbook.lastModifiedBy = 'Sistema de Gestión Misionera';
-      workbook.created = new Date();
-      workbook.modified = new Date();
-
-      // Hoja de resumen ejecutivo
-      const summarySheet = workbook.addWorksheet('Resumen Ejecutivo');
-      await this._createExecutiveSummarySheet(summarySheet, reportData);
-
-      // Hojas según tipo de reporte
-      if (reportData.reportType === 'complete_group_report') {
-        await this._createGroupReportSheets(workbook, reportData);
-      } else if (reportData.reportType === 'church_consolidated_report') {
-        await this._createChurchReportSheets(workbook, reportData);
-      }
-
-      // Hoja de gráficos (si se requiere)
-      if (options.includeCharts) {
-        await this._createChartsSheet(workbook, reportData);
-      }
-
-      // Generar archivo temporal
-      const fileName = `reporte_${reportData.metadata.reportId}_${Date.now()}.xlsx`;
-      const filePath = path.join(process.cwd(), 'temp', fileName);
-      
-      // Asegurar que existe el directorio temp
-      await this._ensureTempDirectory();
-      
-      await workbook.xlsx.writeFile(filePath);
-
-      return {
-        fileName,
-        filePath,
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      };
-    } catch (error) {
-      console.error('Error exportando a Excel:', error);
-      throw new Error(`Error exportando a Excel: ${error.message}`);
-    }
-  }
-
-  /**
-   * Exporta reporte a PDF
-   */
-  async exportToPDF(reportData, options = {}) {
-    try {
-      const fileName = `reporte_${reportData.metadata.reportId}_${Date.now()}.pdf`;
-      const filePath = path.join(process.cwd(), 'temp', fileName);
-      
-      await this._ensureTempDirectory();
-
-      const doc = new PDFDocument({
-        size: 'A4',
-        margin: 50,
-        info: {
-          Title: `Reporte - ${reportData.metadata.reportType}`,
-          Author: 'Sistema de Gestión Misionera',
-          Creator: 'Sistema de Gestión Misionera',
-          CreationDate: new Date()
-        }
-      });
-
-      const stream = require('fs').createWriteStream(filePath);
-      doc.pipe(stream);
-
-      // Generar contenido del PDF
-      await this._generatePDFContent(doc, reportData, options);
-
-      doc.end();
-
-      // Esperar a que termine la escritura
-      await new Promise((resolve, reject) => {
-        stream.on('finish', resolve);
-        stream.on('error', reject);
-      });
-
-      return {
-        fileName,
-        filePath,
-        mimeType: 'application/pdf'
-      };
-    } catch (error) {
-      console.error('Error exportando a PDF:', error);
-      throw new Error(`Error exportando a PDF: ${error.message}`);
-    }
-  }
-
-  // =============================================
-  // MÉTODOS PRIVADOS DE DATOS
-  // =============================================
-
-  /**
-   * Obtiene datos base del grupo
-   */
-  async _getGroupBaseData(groupId) {
-    return await Group.findByPk(groupId, {
+    const group = await Group.findByPk(groupId, {
       include: [
-        {
-          model: Church,
-          attributes: ['name', 'address', 'pastor']
-        },
-        {
-          model: User,
-          as: 'leader',
-          attributes: ['firstName', 'lastName', 'email', 'phone']
-        }
-      ],
-      attributes: [
-        'id', 'name', 'type', 'category', 'description',
-        'currentCapacity', 'maxCapacity', 'meetingSchedule',
-        'location', 'status', 'createdAt'
+        { model: Church, attributes: ['id', 'name', 'address', 'city'] },
+        { model: User, as: 'Leader', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] }
       ]
     });
-  }
 
-  /**
-   * Obtiene datos de miembros del grupo
-   */
-  async _getGroupMembersData(groupId, dateRange) {
-    const members = await Member.findAll({
-      where: { 
-        groupId,
-        status: { [Op.in]: ['active', 'inactive'] }
-      },
-      include: [
-        {
-          model: SpiritualIndicator,
-          where: {
-            evaluationDate: {
-              [Op.between]: [dateRange.start, dateRange.end]
-            }
-          },
-          required: false
-        }
-      ],
-      order: [['lastName', 'ASC'], ['firstName', 'ASC']]
-    });
+    if (!group) throw new NotFoundError('Grupo');
 
-    // Estadísticas de miembros
-    const stats = {
-      total: members.length,
-      active: members.filter(m => m.status === 'active').length,
-      inactive: members.filter(m => m.status === 'inactive').length,
-      baptized: members.filter(m => m.baptized).length,
-      byGender: this._getDistribution(members, 'gender'),
-      byAgeGroup: this._getDistribution(members, 'ageGroup'),
-      bySpiritualStatus: this._getDistribution(members, 'spiritualStatus'),
-      averageAge: calculationHelpers.average(
-        members.map(m => m.age).filter(age => age !== null)
-      )
+    // Validación de permisos integrada
+    await this._verifyGroupAccess(authUser, group);
+
+    const memberWhere = { 
+      groupId,
+      ...(includeInactive === 'true' ? {} : { isActive: true })
     };
+    const semesterFilter = semesterId ? { semesterId } : {};
 
-    return { members, stats };
-  }
+    // Ejecución paralela de las secciones del reporte detallado
+    const [
+      memberStats, 
+      spiritualIndicators, 
+      performanceMetrics, 
+      bibleStudents, 
+      growthAnalysis
+    ] = await Promise.all([
+      this._getMemberStatistics(groupId, memberWhere),
+      this._getSpiritualIndicatorsReport(groupId, memberWhere, semesterFilter),
+      this._getPerformanceMetricsReport(groupId, semesterFilter),
+      this._getBibleStudentsReport(groupId, includeInactive),
+      this._getGrowthAnalysis(groupId)
+    ]);
 
-  /**
-   * Obtiene datos de estudiantes bíblicos
-   */
-  async _getGroupStudentsData(groupId, dateRange) {
-    const students = await BibleStudent.findAll({
-      where: { 
-        groupId,
-        status: { [Op.in]: ['active', 'graduated', 'inactive'] },
-        createdAt: {
-          [Op.lte]: dateRange.end
-        }
-      },
-      order: [['lastName', 'ASC'], ['firstName', 'ASC']]
+    const executiveSummary = this._generateExecutiveSummary({
+      memberStats,
+      spiritualIndicators,
+      performanceMetrics,
+      bibleStudents,
+      growthAnalysis
     });
-
-    const stats = {
-      total: students.length,
-      active: students.filter(s => s.status === 'active').length,
-      graduated: students.filter(s => s.status === 'graduated').length,
-      inactive: students.filter(s => s.status === 'inactive').length,
-      byProgram: this._getDistribution(students, 'studyProgram'),
-      byProgress: this._getDistribution(students, 'progress'),
-      averageGrade: calculationHelpers.average(
-        students.map(s => s.currentGrade).filter(grade => grade !== null)
-      ),
-      completionRate: students.length > 0 ? 
-        calculationHelpers.percentage(
-          students.filter(s => s.status === 'graduated').length,
-          students.length
-        ) : 0
-    };
-
-    return { students, stats };
-  }
-
-  /**
-   * Obtiene métricas del grupo
-   */
-  async _getGroupMetricsData(groupId, dateRange) {
-    const metrics = await GroupMetric.findAll({
-      where: {
-        groupId,
-        periodStart: { [Op.gte]: dateRange.start },
-        periodEnd: { [Op.lte]: dateRange.end }
-      },
-      order: [['periodStart', 'ASC']]
-    });
-
-    const aggregated = {
-      totalSessions: calculationHelpers.safeSum(metrics.map(m => m.totalSessions)),
-      averageAttendance: calculationHelpers.average(metrics.map(m => m.averageAttendance)),
-      totalConversions: calculationHelpers.safeSum(metrics.map(m => m.newConversions)),
-      totalBaptisms: calculationHelpers.safeSum(metrics.map(m => m.baptisms)),
-      totalEvents: calculationHelpers.safeSum(metrics.map(m => m.evangelisticEvents)),
-      totalDecisions: calculationHelpers.safeSum(metrics.map(m => m.decisionsForChrist)),
-      maxAttendance: calculationHelpers.safeMax(metrics.map(m => m.maxAttendance)),
-      minAttendance: calculationHelpers.safeMin(metrics.map(m => m.minAttendance))
-    };
-
-    return { metrics, aggregated };
-  }
-
-  /**
-   * Obtiene indicadores espirituales
-   */
-  async _getSpiritualIndicatorsData(groupId, dateRange) {
-    const indicators = await SpiritualIndicator.findAll({
-      include: [{
-        model: Member,
-        where: { groupId },
-        attributes: ['firstName', 'lastName', 'spiritualStatus']
-      }],
-      where: {
-        evaluationDate: {
-          [Op.between]: [dateRange.start, dateRange.end]
-        }
-      },
-      order: [['evaluationDate', 'DESC']]
-    });
-
-    const analysis = {
-      totalEvaluations: indicators.length,
-      averageAttendance: calculationHelpers.average(
-        indicators.map(i => i.attendancePercentage)
-      ),
-      averageBibleReading: calculationHelpers.average(
-        indicators.map(i => i.bibleReadingDays)
-      ),
-      averageSpiritualGrowth: calculationHelpers.average(
-        indicators.map(i => i.spiritualGrowthLevel)
-      ),
-      prayerFrequencyDistribution: this._getDistribution(indicators, 'prayerFrequency'),
-      participationDistribution: this._getDistribution(indicators, 'participationLevel')
-    };
-
-    return { indicators, analysis };
-  }
-
-  /**
-   * Genera análisis estadístico
-   */
-  async _generateStatisticalAnalysis(groupId, dateRange) {
-    const currentPeriod = await this._getPeriodData(groupId, dateRange);
-    const previousPeriod = await this._getPeriodData(
-      groupId, 
-      this._getPreviousPeriodRange(dateRange)
-    );
-
-    const trends = this._calculateTrends(currentPeriod, previousPeriod);
-    const correlations = this._calculateCorrelations(currentPeriod);
-    const forecasting = this._generateForecast(currentPeriod);
 
     return {
-      currentPeriod,
-      previousPeriod,
-      trends,
-      correlations,
-      forecasting,
-      insights: this._generateInsights(trends, correlations)
+      reportInfo: {
+        generatedAt: new Date(),
+        generatedBy: { id: authUser.id, name: `${authUser.firstName} ${authUser.lastName}` },
+        parameters: { groupId, semesterId: semesterId || 'Todos los semestres', includeInactive }
+      },
+      groupInfo: {
+        id: group.id,
+        name: group.name,
+        description: group.description,
+        category: group.category,
+        schedule: group.schedule,
+        capacity: group.capacity,
+        location: group.location,
+        church: { name: group.Church.name, address: group.Church.address, city: group.Church.city },
+        leader: { name: `${group.Leader.firstName} ${group.Leader.lastName}`, email: group.Leader.email, phone: group.Leader.phone },
+        isActive: group.isActive,
+        createdAt: group.createdAt
+      },
+      executiveSummary,
+      memberStatistics: memberStats,
+      spiritualIndicators,
+      performanceMetrics,
+      bibleStudents,
+      growthAnalysis
     };
   }
 
-  /**
-   * Genera métricas consolidadas de iglesia
-   */
-  async _getConsolidatedChurchMetrics(churchId, dateRange) {
+  async getChurchReportData(churchId, queryParams, authUser) {
+    const { semesterId, includeInactive = false } = queryParams;
+
+    const church = await Church.findByPk(churchId);
+    if (!church) throw new NotFoundError('Iglesia');
+
+    // Reglas de autorización por rol
+    if (authUser.role === 'leader') {
+      throw new Error('No tienes permisos para ver reportes de iglesia completa');
+    }
+    if (authUser.role === 'director' && authUser.churchId !== parseInt(churchId)) {
+      throw new Error('Solo puedes ver reportes de tu iglesia');
+    }
+
     const groups = await Group.findAll({
-      where: { churchId, status: 'active' },
-      attributes: ['id']
+      where: { churchId, ...(includeInactive === 'true' ? {} : { isActive: true }) },
+      include: [{ model: User, as: 'Leader', attributes: ['firstName', 'lastName'] }]
     });
 
-    const groupIds = groups.map(g => g.id);
+    const groupReports = await Promise.all(
+      groups.map(async (group) => {
+        const memberWhere = { groupId: group.id, ...(includeInactive === 'true' ? {} : { isActive: true }) };
+        const semesterFilter = semesterId ? { semesterId } : {};
 
-    const [totalMembers, totalStudents, totalMetrics] = await Promise.all([
-      Member.count({
-        where: { groupId: { [Op.in]: groupIds }, status: 'active' }
-      }),
-      BibleStudent.count({
-        where: { groupId: { [Op.in]: groupIds }, status: 'active' }
-      }),
+        const [memberStats, spiritualIndicators, performanceMetrics, bibleStudents] = await Promise.all([
+          this._getMemberStatistics(group.id, memberWhere),
+          this._getSpiritualIndicatorsReport(group.id, memberWhere, semesterFilter),
+          this._getPerformanceMetricsReport(group.id, semesterFilter),
+          this._getBibleStudentsReport(group.id, includeInactive)
+        ]);
+
+        return {
+          groupId: group.id,
+          groupName: group.name,
+          leader: group.Leader ? `${group.Leader.firstName} ${group.Leader.lastName}` : 'Sin Líder',
+          category: group.category,
+          memberStats,
+          spiritualIndicators: spiritualIndicators.summary,
+          performanceMetrics: performanceMetrics.summary,
+          bibleStudents: bibleStudents.summary
+        };
+      })
+    );
+
+    const churchSummary = this._consolidateChurchStatistics(groupReports);
+
+    return {
+      reportInfo: {
+        generatedAt: new Date(),
+        generatedBy: { id: authUser.id, name: `${authUser.firstName} ${authUser.lastName}` },
+        parameters: { churchId, semesterId: semesterId || 'Todos los semestres', includeInactive }
+      },
+      churchInfo: { id: church.id, name: church.name, address: church.address, city: church.city, totalGroups: groups.length },
+      churchSummary,
+      groupReports
+    };
+  }
+
+  async getComparativeReportData(groupIds, semesterId, authUser) {
+    if (!Array.isArray(groupIds) || groupIds.length < 2) {
+      throw new Error('Se requieren al menos 2 grupos para comparar');
+    }
+    if (groupIds.length > 10) {
+      throw new Error('Máximo 10 grupos para comparar');
+    }
+
+    const groups = await Group.findAll({
+      where: { id: { [Op.in]: groupIds } },
+      include: [
+        { model: Church, attributes: ['id', 'name'] },
+        { model: User, as: 'Leader', attributes: ['firstName', 'lastName'] }
+      ]
+    });
+
+    if (groups.length !== groupIds.length) {
+      throw new NotFoundError('Grupos (algunos IDs proporcionados no existen)');
+    }
+
+    for (const group of groups) {
+      await this._verifyGroupAccess(authUser, group);
+    }
+
+    const comparativeData = await Promise.all(
+      groups.map(async (group) => {
+        const memberWhere = { groupId: group.id, isActive: true };
+        const semesterFilter = semesterId ? { semesterId } : {};
+
+        const [memberStats, spiritualIndicators, performanceMetrics, bibleStudents] = await Promise.all([
+          this._getMemberStatistics(group.id, memberWhere),
+          this._getSpiritualIndicatorsReport(group.id, memberWhere, semesterFilter),
+          this._getPerformanceMetricsReport(group.id, semesterFilter),
+          this._getBibleStudentsReport(group.id, false)
+        ]);
+
+        return {
+          groupId: group.id,
+          groupName: group.name,
+          church: group.Church.name,
+          leader: group.Leader ? `${group.Leader.firstName} ${group.Leader.lastName}` : 'Sin Líder',
+          category: group.category,
+          capacity: group.capacity,
+          memberStats,
+          spiritualIndicators: spiritualIndicators.summary,
+          performanceMetrics: performanceMetrics.summary,
+          bibleStudents: bibleStudents.summary,
+          scores: {
+            memberEngagement: this._calculateMemberEngagementScore(memberStats, spiritualIndicators.summary),
+            spiritualGrowth: spiritualIndicators.summary.overallAverage,
+            academicProgress: bibleStudents.summary.averageProgress,
+            groupEfficiency: this._calculateGroupEfficiencyScore(memberStats, group.capacity, performanceMetrics.summary)
+          }
+        };
+      })
+    );
+
+    const rankings = this._generateGroupRankings(comparativeData);
+
+    return {
+      reportInfo: {
+        generatedAt: new Date(),
+        generatedBy: { id: authUser.id, name: `${authUser.firstName} ${authUser.lastName}` },
+        parameters: { groupCount: groups.length, semesterId: semesterId || 'Todos los semestres' }
+      },
+      comparativeData,
+      rankings,
+      insights: this._generateComparativeInsights(comparativeData, rankings)
+    };
+  }
+
+  // =============================================================================
+  // ANALÍTICA DE REPORTES ANALÍTICOS Y CONSOLIDADOS (CORREGIDOS)
+  // =============================================================================
+
+  async getChurchConsolidatedReport(churchId, filters = {}) {
+    const dateRange = filters.periodStart && filters.periodEnd ? 
+      { start: filters.periodStart, end: filters.periodEnd } : 
+      dateHelpers.getQuarterRange(new Date().getFullYear(), Math.ceil((new Date().getMonth() + 1) / 3));
+
+    const church = await Church.findByPk(churchId, { raw: true });
+    if (!church) throw new NotFoundError('Iglesia');
+
+    const [groups, totalMembers, totalStudents, aggregatedMetrics] = await Promise.all([
+      Group.findAll({ where: { churchId, isActive: true }, attributes: ['id', 'name', 'category', 'isActive'], raw: true }),
+      Member.count({ include: [{ model: Group, where: { churchId } }], where: { isActive: true } }),
+      Student.count({ include: [{ model: Group, where: { churchId } }], where: { isActive: true } }), // Corregido a Student
       GroupMetric.findAll({
-        where: {
-          groupId: { [Op.in]: groupIds },
-          periodStart: { [Op.gte]: dateRange.start },
-          periodEnd: { [Op.lte]: dateRange.end }
-        }
+        include: [{ model: Group, where: { churchId } }],
+        where: { periodStart: { [Op.gte]: dateRange.start }, periodEnd: { [Op.lte]: dateRange.end } },
+        attributes: [
+          [Sequelize.fn('SUM', Sequelize.col('newConversions')), 'conversions'],
+          [Sequelize.fn('SUM', Sequelize.col('baptisms')), 'baptisms'],
+          [Sequelize.fn('AVG', Sequelize.col('averageAttendance')), 'avgAttendance'],
+          [Sequelize.fn('SUM', Sequelize.col('totalSessions')), 'sessions']
+        ],
+        raw: true
       })
     ]);
 
-    return {
-      totalGroups: groups.length,
-      totalMembers,
-      totalStudents,
-      aggregatedMetrics: {
-        totalConversions: calculationHelpers.safeSum(totalMetrics.map(m => m.newConversions)),
-        totalBaptisms: calculationHelpers.safeSum(totalMetrics.map(m => m.baptisms)),
-        averageAttendance: calculationHelpers.average(totalMetrics.map(m => m.averageAttendance)),
-        totalEvents: calculationHelpers.safeSum(totalMetrics.map(m => m.evangelisticEvents))
-      }
-    };
+    const metrics = aggregatedMetrics[0] || {};
+
+    return responseHelpers.success({
+      metadata: { churchId, churchName: church.name, generatedAt: new Date().toISOString(), period: `${dateRange.start} al ${dateRange.end}` },
+      summary: {
+        totalGroups: groups.length,
+        totalMembers: totalMembers || 0,
+        totalStudents: totalStudents || 0,
+        conversions: parseInt(metrics.conversions) || 0,
+        baptisms: parseInt(metrics.baptisms) || 0,
+        averageAttendance: Math.round((parseFloat(metrics.avgAttendance) || 0) * 100) / 100,
+        totalSessions: parseInt(metrics.sessions) || 0
+      },
+      groupsDetails: groups
+    });
   }
 
-  // =============================================
-  // MÉTODOS DE EXPORTACIÓN
-  // =============================================
+  async getGroupDetailedReport(groupId, filters = {}) {
+    const dateRange = filters.periodStart && filters.periodEnd ? 
+      { start: filters.periodStart, end: filters.periodEnd } : 
+      dateHelpers.getQuarterRange(new Date().getFullYear(), Math.ceil((new Date().getMonth() + 1) / 3));
 
-  /**
-   * Crea hoja de resumen ejecutivo en Excel
-   */
-  async _createExecutiveSummarySheet(worksheet, reportData) {
-    // Configurar hoja
-    worksheet.name = 'Resumen Ejecutivo';
-    
-    // Título principal
-    worksheet.mergeCells('A1:F1');
-    worksheet.getCell('A1').value = 'REPORTE DE GESTIÓN MISIONERA';
-    worksheet.getCell('A1').style = {
-      font: { size: 16, bold: true, color: { argb: 'FFFFFF' } },
-      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } },
-      alignment: { horizontal: 'center', vertical: 'middle' }
-    };
+    const group = await Group.findByPk(groupId, { include: [{ model: Church, attributes: ['name', 'city'] }], raw: true });
+    if (!group) throw new NotFoundError('Grupo Misionero');
 
-    // Información del reporte
-    let row = 3;
-    const infoData = [
-      ['Fecha de Generación:', dateHelpers.formatDateToString(reportData.metadata.generatedAt)],
-      ['Período:', reportData.metadata.period],
-      ['Tipo de Reporte:', reportData.metadata.reportType]
-    ];
+    const [members, students, metricsHistory] = await Promise.all([
+      Member.findAll({ where: { groupId, isActive: true }, attributes: ['id', 'firstName', 'lastName', 'gender', 'isActive'], raw: true }),
+      Student.findAll({ where: { groupId, isActive: true }, attributes: ['id', 'firstName', 'lastName', 'program', 'progress'], raw: true }), // Corregido a Student
+      GroupMetric.findAll({
+        where: { groupId, periodStart: { [Op.gte]: dateRange.start }, periodEnd: { [Op.lte]: dateRange.end } },
+        order: [['periodStart', 'ASC']],
+        raw: true
+      })
+    ]);
 
-    infoData.forEach(([label, value]) => {
-      worksheet.getCell(`A${row}`).value = label;
-      worksheet.getCell(`B${row}`).value = value;
-      worksheet.getCell(`A${row}`).style = { font: { bold: true } };
-      row++;
+    return responseHelpers.success({
+      groupInfo: { id: group.id, name: group.name, churchName: group['Church.name'], city: group['Church.city'] },
+      structure: { memberCount: members.length, studentCount: students.length },
+      history: metricsHistory,
+      roster: { members, students }
+    });
+  }
+
+  async getEvangelismComparativeReport(filters = {}) {
+    const dateRange = filters.periodStart && filters.periodEnd ? 
+      { start: filters.periodStart, end: filters.periodEnd } : 
+      dateHelpers.getQuarterRange(new Date().getFullYear(), Math.ceil((new Date().getMonth() + 1) / 3));
+
+    const churchWhere = filters.country ? { country: filters.country, isActive: true } : { isActive: true };
+    const churches = await Church.findAll({ where: churchWhere, attributes: ['id', 'name', 'country'], raw: true });
+
+    const metricsSummary = await GroupMetric.findAll({
+      include: [{ model: Group, where: { isActive: true }, attributes: ['churchId'] }],
+      where: { periodStart: { [Op.gte]: dateRange.start }, periodEnd: { [Op.lte]: dateRange.end } },
+      attributes: [
+        [Sequelize.col('Group.churchId'), 'churchId'],
+        [Sequelize.fn('SUM', Sequelize.col('newConversions')), 'conversions'],
+        [Sequelize.fn('SUM', Sequelize.col('baptisms')), 'baptisms']
+      ],
+      group: [Sequelize.col('Group.churchId')],
+      raw: true
     });
 
-    // Resumen de métricas (si existe)
-    if (reportData.executiveSummary) {
-      row += 2;
-      worksheet.getCell(`A${row}`).value = 'MÉTRICAS PRINCIPALES';
-      worksheet.getCell(`A${row}`).style = {
-        font: { size: 14, bold: true },
-        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E2EFDA' } }
+    const metricsMap = arrayHelpers.indexBy(metricsSummary, 'churchId');
+
+    const comparativeData = churches.map(church => {
+      const churchMetric = metricsMap[church.id] || {};
+      const conversions = parseInt(churchMetric.conversions) || 0;
+      const baptisms = parseInt(churchMetric.baptisms) || 0;
+
+      return {
+        churchId: church.id,
+        name: church.name,
+        country: church.country,
+        conversions, 
+        baptisms,
+        baptismRate: conversions > 0 ? calculationHelpers.percentage(baptisms, conversions) : 0
       };
-
-      row++;
-      Object.entries(reportData.executiveSummary).forEach(([key, value]) => {
-        if (typeof value === 'number') {
-          worksheet.getCell(`A${row}`).value = formatHelpers.formatLabel(key);
-          worksheet.getCell(`B${row}`).value = value;
-          row++;
-        }
-      });
-    }
-
-    // Ajustar ancho de columnas
-    worksheet.getColumn('A').width = 25;
-    worksheet.getColumn('B').width = 20;
-  }
-
-  /**
-   * Genera contenido PDF
-   */
-  async _generatePDFContent(doc, reportData, options) {
-    // Encabezado
-    doc.fontSize(20).text('REPORTE DE GESTIÓN MISIONERA', 50, 50, {
-      align: 'center'
     });
 
-    doc.fontSize(12).text(`Generado el: ${dateHelpers.formatDateToString(reportData.metadata.generatedAt)}`, 50, 100);
-    doc.text(`Período: ${reportData.metadata.period}`, 50, 115);
-
-    let yPosition = 150;
-
-    // Resumen ejecutivo
-    if (reportData.executiveSummary) {
-      doc.fontSize(16).text('RESUMEN EJECUTIVO', 50, yPosition);
-      yPosition += 30;
-
-      Object.entries(reportData.executiveSummary).forEach(([key, value]) => {
-        if (typeof value === 'number') {
-          doc.fontSize(12).text(`${formatHelpers.formatLabel(key)}: ${value}`, 50, yPosition);
-          yPosition += 20;
-        }
-      });
-    }
-
-    // Información específica según tipo de reporte
-    if (reportData.reportType === 'complete_group_report') {
-      await this._addGroupReportToPDF(doc, reportData, yPosition);
-    }
-
-    // Pie de página
-    doc.fontSize(8).text(
-      'Sistema de Gestión Misionera - Generado automáticamente',
-      50,
-      doc.page.height - 50,
-      { align: 'center' }
-    );
+    return responseHelpers.success({
+      period: dateRange,
+      totalChurchesEvaluated: churches.length,
+      ranking: comparativeData.sort((a, b) => b.baptisms - a.baptisms)
+    });
   }
 
-  // =============================================
-  // MÉTODOS AUXILIARES
-  // =============================================
+  async getSpiritualAuditReport(filters = {}) {
+    const dateRange = filters.periodStart && filters.periodEnd ? 
+      { start: filters.periodStart, end: filters.periodEnd } : 
+      dateHelpers.getQuarterRange(new Date().getFullYear(), Math.ceil((new Date().getMonth() + 1) / 3));
 
-  /**
-   * Valida permisos para generar reporte de grupo
-   */
-  async _validateReportPermissions(groupId, userRole, userId) {
-    if (ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[ROLES.ADMIN]) {
-      return true; // Admin y director pueden ver todos los reportes
+    const memberWhere = { isActive: true };
+    const groupWhere = { isActive: true };
+
+    if (filters.churchId) groupWhere.churchId = filters.churchId;
+    if (filters.groupId) memberWhere.groupId = filters.groupId;
+
+    // Corregido: Se mapea sobre el modelo Indicator unificado usando el campo 'createdAt' o rango disponible
+    const indicators = await Indicator.findAll({
+      include: [{
+        model: Member, where: memberWhere, attributes: ['id', 'firstName', 'lastName'],
+        include: [{ model: Group, where: groupWhere, attributes: ['id', 'name', 'churchId'] }]
+      }],
+      where: { createdAt: { [Op.between]: [dateRange.start, dateRange.end] } },
+      order: [['createdAt', 'DESC']],
+      raw: true
+    });
+
+    const averageValues = calculationHelpers.average(indicators.map(i => parseFloat(i.value) || 0));
+
+    return responseHelpers.success({
+      generatedAt: new Date().toISOString(),
+      range: dateRange,
+      analysis: { 
+        totalEvaluations: indicators.length, 
+        globalAverageValue: Math.round(averageValues * 100) / 100 
+      },
+      records: indicators.map(ind => ({
+        evaluationId: ind.id, 
+        date: ind.createdAt,
+        memberName: `${ind['Member.firstName']} ${ind['Member.lastName']}`,
+        groupName: ind['Member.Group.name'], 
+        type: ind.type,
+        value: ind.value
+      }))
+    });
+  }
+
+  async getSemesterHistoricalReport(semesterId) {
+    const semester = await Semester.findByPk(semesterId, { raw: true });
+    if (!semester) throw new NotFoundError('Semestre Académico/Misionero');
+
+    const [metricsSum, activeMembersAtEnd] = await Promise.all([
+      GroupMetric.findAll({
+        where: { periodStart: { [Op.gte]: semester.startDate }, periodEnd: { [Op.lte]: semester.endDate } },
+        attributes: [
+          [Sequelize.fn('SUM', Sequelize.col('newConversions')), 'conversions'],
+          [Sequelize.fn('SUM', Sequelize.col('baptisms')), 'baptisms']
+        ],
+        raw: true
+      }),
+      Member.count({ where: { isActive: true, createdAt: { [Op.lte]: semester.endDate } } })
+    ]);
+
+    const data = metricsSum[0] || {};
+
+    return responseHelpers.success({
+      semesterInfo: { id: semester.id, name: semester.name, code: semester.code, duration: `${semester.startDate} al ${semester.endDate}` },
+      consolidatedMetrics: { 
+        totalConversions: parseInt(data.conversions) || 0, 
+        totalBaptisms: parseInt(data.baptisms) || 0, 
+        closingMembership: activeMembersAtEnd || 0 
+      }
+    });
+  }
+
+  // =============================================================================
+  // MÉTODOS PRIVADOS / AUXILIARES INTERNOS DE CÁLCULO
+  // =============================================================================
+
+  async _verifyGroupAccess(authUser, group) {
+    if (authUser.role === 'admin') return true;
+    if (authUser.role === 'leader' && group.leaderId !== authUser.id) {
+      throw new Error('No tienes permisos para acceder a este grupo');
     }
-
-    if (userRole === ROLES.LEADER) {
-      const group = await Group.findByPk(groupId, {
-        attributes: ['leaderId']
-      });
-      
-      if (!group || group.leaderId !== userId) {
-        throw new Error(MESSAGES.ERRORS.INSUFFICIENT_PERMISSIONS);
+    if (authUser.role === 'director') {
+      if (group.churchId !== authUser.churchId) {
+        throw new Error('No tienes permisos para acceder a grupos de otras iglesias');
       }
     }
-
     return true;
   }
 
-  /**
-   * Valida permisos para reporte de iglesia
-   */
-  async _validateChurchReportPermissions(churchId, userRole, userId) {
-    if (ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[ROLES.DIRECTOR]) {
-      return true;
-    }
-    
-    throw new Error(MESSAGES.ERRORS.INSUFFICIENT_PERMISSIONS);
-  }
+  async _getMemberStatistics(groupId, memberWhere) {
+    const totalMembers = await Member.count({ where: memberWhere });
+    const activeMembers = await Member.count({ where: { ...memberWhere, isActive: true } });
 
-  /**
-   * Obtiene rango de fechas para reporte
-   */
-  _getReportDateRange(period = 'current_quarter') {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-
-    switch (period) {
-      case 'current_month':
-        return dateHelpers.getMonthRange(currentYear, currentMonth);
-      case 'current_quarter':
-        return dateHelpers.getQuarterRange(currentYear, Math.ceil(currentMonth / 3));
-      case 'current_year':
-        return dateHelpers.getYearRange(currentYear);
-      case 'last_30_days':
-        return {
-          start: dateHelpers.formatDateForDB(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)),
-          end: dateHelpers.formatDateForDB(now)
-        };
-      default:
-        return dateHelpers.getQuarterRange(currentYear, Math.ceil(currentMonth / 3));
-    }
-  }
-
-  /**
-   * Genera ID único para reporte
-   */
-  _generateReportId() {
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 1000);
-    return `RPT-${timestamp}-${random}`;
-  }
-
-  /**
-   * Genera resumen ejecutivo
-   */
-  _generateExecutiveSummary(data) {
-    return {
-      totalMembers: data.members.stats.total,
-      activeMembers: data.members.stats.active,
-      totalStudents: data.students.stats.total,
-      activeStudents: data.students.stats.active,
-      baptizedMembers: data.members.stats.baptized,
-      averageAttendance: data.metrics.aggregated.averageAttendance,
-      totalConversions: data.metrics.aggregated.totalConversions,
-      totalBaptisms: data.metrics.aggregated.totalBaptisms,
-      completionRate: data.students.stats.completionRate,
-      spiritualGrowthAverage: data.indicators.analysis.averageSpiritualGrowth
-    };
-  }
-
-  /**
-   * Genera recomendaciones basadas en análisis
-   */
-  _generateRecommendations(analysis) {
-    const recommendations = [];
-
-    if (analysis.trends.attendance < 0) {
-      recommendations.push({
-        category: 'Asistencia',
-        priority: 'Alta',
-        description: 'La asistencia ha disminuido. Considere revisar horarios y métodos de comunicación.',
-        actions: [
-          'Encuesta de satisfacción a miembros',
-          'Revisión de horarios de reunión',
-          'Implementar recordatorios automáticos'
-        ]
-      });
-    }
-
-    if (analysis.correlations.conversionRate < 5) {
-      recommendations.push({
-        category: 'Evangelismo',
-        priority: 'Media',
-        description: 'La tasa de conversión está por debajo del promedio esperado.',
-        actions: [
-          'Capacitación en técnicas evangelísticas',
-          'Incrementar eventos de alcance',
-          'Establecer metas mensuales de evangelismo'
-        ]
-      });
-    }
-
-    return recommendations;
-  }
-
-  /**
-   * Obtiene distribución de valores
-   */
-  _getDistribution(data, field) {
-    if (!data || data.length === 0) return [];
-
-    const validData = data.filter(item => item[field] !== null && item[field] !== undefined);
-    const grouped = arrayHelpers.groupBy(validData, field);
-    
-    return Object.keys(grouped).map(key => ({
-      label: key || 'Sin especificar',
-      value: grouped[key].length,
-      percentage: calculationHelpers.percentage(grouped[key].length, validData.length)
-    }));
-  }
-
-  /**
-   * Calcula tendencias entre períodos
-   */
-  _calculateTrends(current, previous) {
-    return {
-      attendance: calculationHelpers.growthRate(
-        current.averageAttendance, 
-        previous.averageAttendance
-      ),
-      members: calculationHelpers.growthRate(
-        current.totalMembers, 
-        previous.totalMembers
-      ),
-      conversions: calculationHelpers.growthRate(
-        current.totalConversions, 
-        previous.totalConversions
-      ),
-      baptisms: calculationHelpers.growthRate(
-        current.totalBaptisms, 
-        previous.totalBaptisms
-      )
-    };
-  }
-
-  /**
-   * Asegura que existe directorio temporal
-   */
-  async _ensureTempDirectory() {
-    const tempDir = path.join(process.cwd(), 'temp');
-    try {
-      await fs.access(tempDir);
-    } catch {
-      await fs.mkdir(tempDir, { recursive: true });
-    }
-  }
-
-  /**
-   * Construye filtros para reportes
-   */
-  _buildReportFilters(filters, userRole, userId) {
-    let conditions = {
-      church: { status: 'active' },
-      group: { status: 'active' },
-      member: { status: 'active' }
-    };
-
-    // Aplicar filtros de seguridad por rol
-    if (userRole === ROLES.LEADER) {
-      conditions.group = { ...conditions.group, leaderId: userId };
-    }
-
-    // Aplicar filtros específicos
-    if (filters.churchId) {
-      conditions.church = { ...conditions.church, id: filters.churchId };
-      conditions.group = { ...conditions.group, churchId: filters.churchId };
-    }
-
-    if (filters.groupType) {
-      conditions.group = { ...conditions.group, type: filters.groupType };
-    }
-
-    return conditions;
-  }
-
-  /**
-   * Obtiene datos de período para análisis
-   */
-  async _getPeriodData(groupId, dateRange) {
-    const [members, students, metrics, indicators] = await Promise.all([
-      Member.count({
-        where: { 
-          groupId, 
-          status: 'active',
-          createdAt: { [Op.lte]: dateRange.end }
-        }
-      }),
-      BibleStudent.count({
-        where: { 
-          groupId, 
-          status: 'active',
-          createdAt: { [Op.lte]: dateRange.end }
-        }
-      }),
-      GroupMetric.findAll({
-        where: {
-          groupId,
-          periodStart: { [Op.gte]: dateRange.start },
-          periodEnd: { [Op.lte]: dateRange.end }
-        }
-      }),
-      SpiritualIndicator.findAll({
-        include: [{
-          model: Member,
-          where: { groupId }
-        }],
-        where: {
-          evaluationDate: {
-            [Op.between]: [dateRange.start, dateRange.end]
-          }
-        }
+    const [genderStats, ageGroups] = await Promise.all([
+      Member.findAll({ where: memberWhere, attributes: ['gender', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']], group: ['gender'], raw: true }),
+      Member.findAll({
+        where: memberWhere,
+        attributes: [
+          [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'],
+          [Sequelize.literal(`CASE WHEN EXTRACT(YEAR FROM AGE(birthDate)) < 18 THEN 'Menores de 18' WHEN EXTRACT(YEAR FROM AGE(birthDate)) BETWEEN 18 AND 30 THEN '18-30' WHEN EXTRACT(YEAR FROM AGE(birthDate)) BETWEEN 31 AND 50 THEN '31-50' ELSE 'Mayores de 50' END`), 'ageGroup']
+        ],
+        group: [Sequelize.literal(`CASE WHEN EXTRACT(YEAR FROM AGE(birthDate)) < 18 THEN 'Menores de 18' WHEN EXTRACT(YEAR FROM AGE(birthDate)) BETWEEN 18 AND 30 THEN '18-30' WHEN EXTRACT(YEAR FROM AGE(birthDate)) BETWEEN 31 AND 50 THEN '31-50' ELSE 'Mayores de 50' END`)],
+        raw: true
       })
     ]);
 
     return {
-      totalMembers: members,
-      totalStudents: students,
-      averageAttendance: calculationHelpers.average(metrics.map(m => m.averageAttendance)),
-      totalConversions: calculationHelpers.safeSum(metrics.map(m => m.newConversions)),
-      totalBaptisms: calculationHelpers.safeSum(metrics.map(m => m.baptisms)),
-      spiritualGrowth: calculationHelpers.average(indicators.map(i => i.spiritualGrowthLevel)),
-      totalSessions: calculationHelpers.safeSum(metrics.map(m => m.totalSessions))
+      totalMembers, activeMembers, inactiveMembers: totalMembers - activeMembers,
+      genderDistribution: genderStats.reduce((acc, item) => { acc[item.gender || 'No especificado'] = parseInt(item.count); return acc; }, {}),
+      ageDistribution: ageGroups.reduce((acc, item) => { acc[item.ageGroup] = parseInt(item.count); return acc; }, {})
     };
   }
 
-  /**
-   * Obtiene rango del período anterior
-   */
-  _getPreviousPeriodRange(currentRange) {
-    const start = new Date(currentRange.start);
-    const end = new Date(currentRange.end);
-    const duration = end.getTime() - start.getTime();
+  async _getSpiritualIndicatorsReport(groupId, memberWhere, semesterFilter) {
+    const indicatorTypes = ['asistencia_cultos', 'participacion_actividades', 'lectura_biblica', 'vida_oracion', 'servicio_cristiano', 'testimonio_personal', 'crecimiento_espiritual'];
 
-    const previousEnd = new Date(start.getTime() - 86400000); // -1 día
-    const previousStart = new Date(previousEnd.getTime() - duration);
+    const typeStats = await Promise.all(
+      indicatorTypes.map(async (type) => {
+        const stats = await Indicator.findAll({
+          include: [{ model: Member, where: memberWhere, attributes: [] }],
+          where: { type, ...semesterFilter },
+          attributes: [[Sequelize.fn('AVG', Sequelize.col('value')), 'average'], [Sequelize.fn('COUNT', Sequelize.col('Indicator.id')), 'count']],
+          raw: true
+        });
+        return { type, average: parseFloat(stats[0].average || 0).toFixed(1), count: parseInt(stats[0].count || 0) };
+      })
+    );
+
+    const activeStats = typeStats.filter(stat => stat.count > 0);
+    const overallAverage = activeStats.length > 0 
+      ? (typeStats.reduce((sum, stat) => sum + parseFloat(stat.average), 0) / activeStats.length).toFixed(1)
+      : '0.0';
+
+    return { summary: { overallAverage: parseFloat(overallAverage), totalEvaluations: typeStats.reduce((sum, stat) => sum + stat.count, 0) }, byType: typeStats };
+  }
+
+  async _getPerformanceMetricsReport(groupId, semesterFilter) {
+    const metrics = await Metric.findAll({
+      where: { groupId, ...semesterFilter },
+      attributes: [
+        [Sequelize.fn('AVG', Sequelize.col('attendance')), 'avgAttendance'], [Sequelize.fn('AVG', Sequelize.col('newVisitors')), 'avgNewVisitors'],
+        [Sequelize.fn('AVG', Sequelize.col('conversions')), 'avgConversions'], [Sequelize.fn('SUM', Sequelize.col('offerings')), 'totalOfferings'],
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'reportCount']
+      ],
+      raw: true
+    });
+    const result = metrics[0] || {};
+    return { summary: { averageAttendance: parseFloat(result.avgAttendance || 0).toFixed(1), averageNewVisitors: parseFloat(result.avgNewVisitors || 0).toFixed(1), averageConversions: parseFloat(result.avgConversions || 0).toFixed(1), totalOfferings: parseFloat(result.totalOfferings || 0), totalReports: parseInt(result.reportCount || 0) } };
+  }
+
+  async _getBibleStudentsReport(groupId, includeInactive) {
+    const studentWhere = { groupId, ...(includeInactive === 'true' ? {} : { isActive: true }) };
+    const [totalStudents, programStats, graduatedStudents] = await Promise.all([
+      Student.count({ where: studentWhere }),
+      Student.findAll({ where: studentWhere, attributes: ['program', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'], [Sequelize.fn('AVG', Sequelize.col('progress')), 'avgProgress']], group: ['program'], raw: true }),
+      Student.count({ where: { ...studentWhere, isGraduated: true } })
+    ]);
 
     return {
-      start: dateHelpers.formatDateForDB(previousStart),
-      end: dateHelpers.formatDateForDB(previousEnd)
+      summary: { totalStudents, graduatedStudents, averageProgress: programStats.length > 0 ? (programStats.reduce((sum, prog) => sum + parseFloat(prog.avgProgress || 0), 0) / programStats.length).toFixed(1) : '0.0' },
+      byProgram: programStats.map(prog => ({ program: prog.program, count: parseInt(prog.count), averageProgress: parseFloat(prog.avgProgress || 0).toFixed(1) }))
     };
   }
 
-  /**
-   * Calcula correlaciones entre métricas
-   */
-  _calculateCorrelations(data) {
+  async _getGrowthAnalysis(groupId) {
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const monthlyData = await Member.findAll({
+      where: { groupId, createdAt: { [Op.gte]: sixMonthsAgo } },
+      attributes: [[Sequelize.fn('DATE_TRUNC', 'month', Sequelize.col('createdAt')), 'month'], [Sequelize.fn('COUNT', Sequelize.col('id')), 'newMembers']],
+      group: [Sequelize.fn('DATE_TRUNC', 'month', Sequelize.col('createdAt'))],
+      order: [[Sequelize.fn('DATE_TRUNC', 'month', Sequelize.col('createdAt')), 'ASC']],
+      raw: true
+    });
+
+    return { monthlyGrowth: monthlyData.map(data => ({ month: data.month, newMembers: parseInt(data.newMembers) })), totalGrowthSixMonths: monthlyData.reduce((sum, data) => sum + parseInt(data.newMembers), 0) };
+  }
+
+  _generateExecutiveSummary(data) {
+    const { memberStats, spiritualIndicators, performanceMetrics, bibleStudents, growthAnalysis } = data;
     return {
-      conversionRate: data.totalConversions > 0 && data.totalMembers > 0 ?
-        calculationHelpers.percentage(data.totalConversions, data.totalMembers) : 0,
-      baptismRate: data.totalBaptisms > 0 && data.totalConversions > 0 ?
-        calculationHelpers.percentage(data.totalBaptisms, data.totalConversions) : 0,
-      attendanceEffectiveness: data.averageAttendance || 0,
-      spiritualGrowthIndex: data.spiritualGrowth || 0
+      totalMembers: memberStats.totalMembers, activeMembers: memberStats.activeMembers,
+      memberRetentionRate: memberStats.totalMembers > 0 ? ((memberStats.activeMembers / memberStats.totalMembers) * 100).toFixed(1) : '0.0',
+      spiritualHealthScore: spiritualIndicators.summary.overallAverage, averageAttendance: performanceMetrics.summary.averageAttendance,
+      totalStudents: bibleStudents.summary.totalStudents,
+      graduationRate: bibleStudents.summary.totalStudents > 0 ? ((bibleStudents.summary.graduatedStudents / bibleStudents.summary.totalStudents) * 100).toFixed(1) : '0.0',
+      monthlyGrowth: growthAnalysis.totalGrowthSixMonths
     };
   }
 
-  /**
-   * Genera pronósticos simples
-   */
-  _generateForecast(data) {
-    // Pronóstico simple basado en tendencias actuales
-    const growthFactor = 1.05; // 5% de crecimiento esperado
-    
+  _consolidateChurchStatistics(groupReports) {
+    const totals = groupReports.reduce((acc, group) => {
+      acc.totalMembers += group.memberStats.totalMembers; acc.activeMembers += group.memberStats.activeMembers;
+      acc.totalStudents += group.bibleStudents.totalStudents; acc.graduatedStudents += group.bibleStudents.graduatedStudents;
+      acc.spiritualScores.push(group.spiritualIndicators.overallAverage); acc.attendanceRates.push(parseFloat(group.performanceMetrics.averageAttendance));
+      return acc;
+    }, { totalMembers: 0, activeMembers: 0, totalStudents: 0, graduatedStudents: 0, spiritualScores: [], attendanceRates: [] });
+
     return {
-      projectedMembers: Math.round(data.totalMembers * growthFactor),
-      projectedStudents: Math.round(data.totalStudents * growthFactor),
-      projectedConversions: Math.round(data.totalConversions * growthFactor),
-      confidence: 'medium',
-      timeframe: 'next_quarter'
+      totalGroups: groupReports.length, totalMembers: totals.totalMembers, activeMembers: totals.activeMembers, totalStudents: totals.totalStudents, graduatedStudents: totals.graduatedStudents,
+      averageSpiritualScore: totals.spiritualScores.length > 0 ? (totals.spiritualScores.reduce((sum, score) => sum + score, 0) / totals.spiritualScores.length).toFixed(1) : '0.0',
+      averageAttendance: totals.attendanceRates.length > 0 ? (totals.attendanceRates.reduce((sum, rate) => sum + rate, 0) / totals.attendanceRates.length).toFixed(1) : '0.0'
     };
   }
 
-  /**
-   * Genera insights estadísticos
-   */
-  _generateInsights(trends, correlations) {
-    const insights = [];
+  _calculateMemberEngagementScore(memberStats, spiritualIndicators) {
+    const retentionRate = memberStats.totalMembers > 0 ? (memberStats.activeMembers / memberStats.totalMembers) * 100 : 0;
+    const spiritualScore = spiritualIndicators.overallAverage * 20;
+    return ((retentionRate + spiritualScore) / 2).toFixed(1);
+  }
 
-    if (trends.attendance > 10) {
+  _calculateGroupEfficiencyScore(memberStats, capacity, performanceMetrics) {
+    const utilizationRate = capacity > 0 ? (memberStats.activeMembers / capacity) * 100 : 0;
+    const attendanceScore = parseFloat(performanceMetrics.averageAttendance) * 10;
+    return ((utilizationRate + attendanceScore) / 2).toFixed(1);
+  }
+
+  _generateGroupRankings(comparativeData) {
+    return {
+      byMemberEngagement: [...comparativeData].sort((a, b) => parseFloat(b.scores.memberEngagement) - parseFloat(a.scores.memberEngagement)).map((g, i) => ({ rank: i + 1, groupName: g.groupName, score: g.scores.memberEngagement })),
+      bySpiritualGrowth: [...comparativeData].sort((a, b) => parseFloat(b.scores.spiritualGrowth) - parseFloat(a.scores.spiritualGrowth)).map((g, i) => ({ rank: i + 1, groupName: g.groupName, score: g.scores.spiritualGrowth })),
+      byAcademicProgress: [...comparativeData].sort((a, b) => parseFloat(b.scores.academicProgress) - parseFloat(a.scores.academicProgress)).map((g, i) => ({ rank: i + 1, groupName: g.groupName, score: g.scores.academicProgress })),
+      byGroupEfficiency: [...comparativeData].sort((a, b) => parseFloat(b.scores.groupEfficiency) - parseFloat(a.scores.groupEfficiency)).map((g, i) => ({ rank: i + 1, groupName: g.groupName, score: g.scores.groupEfficiency }))
+    };
+  }
+
+  _generateComparativeInsights(comparativeData, rankings) {
+    const insights = [
+      { type: 'best_practices', title: 'Mejores Prácticas Identificadas', data: { engagement: rankings.byMemberEngagement[0], spiritual: rankings.bySpiritualGrowth[0], academic: rankings.byAcademicProgress[0], efficiency: rankings.byGroupEfficiency[0] } }
+    ];
+
+    const needsAttention = comparativeData.filter(g => parseFloat(g.scores.memberEngagement) < 50 || parseFloat(g.scores.spiritualGrowth) < 3.0 || parseFloat(g.scores.academicProgress) < 50);
+    if (needsAttention.length > 0) {
       insights.push({
-        type: 'positive',
-        metric: 'Asistencia',
-        description: 'Excelente crecimiento en asistencia',
-        impact: 'high'
+        type: 'needs_attention',
+        title: 'Grupos que Requieren Atención',
+        data: needsAttention.map(g => ({ groupName: g.groupName, concerns: [...(parseFloat(g.scores.memberEngagement) < 50 ? ['Baja participación'] : []), ...(parseFloat(g.scores.spiritualGrowth) < 3.0 ? ['Crecimiento limitado'] : []), ...(parseFloat(g.scores.academicProgress) < 50 ? ['Progreso lento'] : [])] }))
       });
     }
 
-    if (correlations.conversionRate > 8) {
-      insights.push({
-        type: 'positive',
-        metric: 'Evangelismo',
-        description: 'Tasa de conversión por encima del promedio',
-        impact: 'high'
-      });
-    }
-
-    if (trends.members < -5) {
-      insights.push({
-        type: 'concern',
-        metric: 'Membresía',
-        description: 'Disminución en el número de miembros',
-        impact: 'medium'
-      });
-    }
+    insights.push({
+      type: 'trends',
+      title: 'Tendencias Generales',
+      data: {
+        averages: { memberEngagement: (comparativeData.reduce((sum, g) => sum + parseFloat(g.scores.memberEngagement), 0) / comparativeData.length).toFixed(1), spiritualGrowth: (comparativeData.reduce((sum, g) => sum + parseFloat(g.scores.spiritualGrowth), 0) / comparativeData.length).toFixed(1), academicProgress: (comparativeData.reduce((sum, g) => sum + parseFloat(g.scores.academicProgress), 0) / comparativeData.length).toFixed(1) },
+        totalGroups: comparativeData.length, highPerformingGroups: comparativeData.filter(g => parseFloat(g.scores.memberEngagement) > 70).length
+      }
+    });
 
     return insights;
-  }
-
-  /**
-   * Genera análisis demográfico
-   */
-  async _getDemographicAnalysis(whereConditions, dateRange) {
-    const members = await Member.findAll({
-      where: whereConditions.member,
-      attributes: ['gender', 'ageGroup', 'maritalStatus', 'educationLevel', 'spiritualStatus']
-    });
-
-    return {
-      genderDistribution: this._getDistribution(members, 'gender'),
-      ageDistribution: this._getDistribution(members, 'ageGroup'),
-      maritalStatusDistribution: this._getDistribution(members, 'maritalStatus'),
-      educationDistribution: this._getDistribution(members, 'educationLevel'),
-      spiritualStatusDistribution: this._getDistribution(members, 'spiritualStatus'),
-      totalAnalyzed: members.length
-    };
-  }
-
-  /**
-   * Genera análisis de crecimiento
-   */
-  async _getGrowthAnalysis(whereConditions, dateRange) {
-    const months = this._getLast12Months();
-    
-    const growthData = await Promise.all(months.map(async (month) => {
-      const monthRange = dateHelpers.getMonthRange(month.year, month.month);
-      
-      const [memberCount, studentCount, baptismCount] = await Promise.all([
-        Member.count({
-          where: {
-            ...whereConditions.member,
-            createdAt: { [Op.between]: [monthRange.start, monthRange.end] }
-          }
-        }),
-        BibleStudent.count({
-          where: {
-            ...whereConditions.student,
-            createdAt: { [Op.between]: [monthRange.start, monthRange.end] }
-          }
-        }),
-        Member.count({
-          where: {
-            ...whereConditions.member,
-            baptized: true,
-            baptismDate: { [Op.between]: [monthRange.start, monthRange.end] }
-          }
-        })
-      ]);
-
-      return {
-        month: month.label,
-        newMembers: memberCount,
-        newStudents: studentCount,
-        baptisms: baptismCount
-      };
-    }));
-
-    return {
-      monthlyData: growthData,
-      trends: this._analyzeGrowthTrends(growthData),
-      totalGrowth: {
-        members: calculationHelpers.safeSum(growthData.map(d => d.newMembers)),
-        students: calculationHelpers.safeSum(growthData.map(d => d.newStudents)),
-        baptisms: calculationHelpers.safeSum(growthData.map(d => d.baptisms))
-      }
-    };
-  }
-
-  /**
-   * Genera análisis de patrones
-   */
-  async _getPatternAnalysis(whereConditions, dateRange) {
-    const indicators = await SpiritualIndicator.findAll({
-      include: [{
-        model: Member,
-        where: whereConditions.member
-      }],
-      where: {
-        evaluationDate: {
-          [Op.between]: [dateRange.start, dateRange.end]
-        }
-      }
-    });
-
-    const patterns = {
-      attendancePatterns: this._analyzeAttendancePatterns(indicators),
-      prayerPatterns: this._getDistribution(indicators, 'prayerFrequency'),
-      growthPatterns: this._analyzeGrowthPatterns(indicators),
-      participationPatterns: this._getDistribution(indicators, 'participationLevel')
-    };
-
-    return patterns;
-  }
-
-  /**
-   * Genera proyecciones
-   */
-  async _generateProjections(whereConditions, dateRange) {
-    const historicalData = await this._getHistoricalData(whereConditions, dateRange);
-    
-    return {
-      nextQuarter: this._projectNextPeriod(historicalData, 'quarter'),
-      nextYear: this._projectNextPeriod(historicalData, 'year'),
-      methodology: 'linear_regression',
-      confidence: 'medium'
-    };
-  }
-
-  /**
-   * Analiza patrones de asistencia
-   */
-  _analyzeAttendancePatterns(indicators) {
-    const attendanceRanges = {
-      excellent: indicators.filter(i => i.attendancePercentage >= 90).length,
-      good: indicators.filter(i => i.attendancePercentage >= 70 && i.attendancePercentage < 90).length,
-      regular: indicators.filter(i => i.attendancePercentage >= 50 && i.attendancePercentage < 70).length,
-      poor: indicators.filter(i => i.attendancePercentage < 50).length
-    };
-
-    return {
-      distribution: attendanceRanges,
-      average: calculationHelpers.average(indicators.map(i => i.attendancePercentage)),
-      consistency: this._calculateAttendanceConsistency(indicators)
-    };
-  }
-
-  /**
-   * Calcula consistencia de asistencia
-   */
-  _calculateAttendanceConsistency(indicators) {
-    if (indicators.length < 2) return 0;
-    
-    const attendances = indicators.map(i => i.attendancePercentage);
-    const mean = calculationHelpers.average(attendances);
-    const variance = attendances.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / attendances.length;
-    const stdDev = Math.sqrt(variance);
-    
-    return Math.max(0, 100 - (stdDev / mean) * 100);
-  }
-
-  /**
-   * Crea hojas de reporte de grupo en Excel
-   */
-  async _createGroupReportSheets(workbook, reportData) {
-    // Hoja de miembros
-    if (reportData.members) {
-      const membersSheet = workbook.addWorksheet('Miembros');
-      await this._createMembersSheet(membersSheet, reportData.members);
-    }
-
-    // Hoja de estudiantes bíblicos
-    if (reportData.bibleStudents) {
-      const studentsSheet = workbook.addWorksheet('Estudiantes Bíblicos');
-      await this._createStudentsSheet(studentsSheet, reportData.bibleStudents);
-    }
-
-    // Hoja de métricas
-    if (reportData.metrics) {
-      const metricsSheet = workbook.addWorksheet('Métricas');
-      await this._createMetricsSheet(metricsSheet, reportData.metrics);
-    }
-  }
-
-  /**
-   * Crea hoja de miembros
-   */
-  async _createMembersSheet(worksheet, membersData) {
-    worksheet.name = 'Miembros';
-    
-    // Encabezados
-    const headers = ['Nombre', 'Apellido', 'Género', 'Edad', 'Estado Civil', 'Estado Espiritual', 'Bautizado'];
-    headers.forEach((header, index) => {
-      const cell = worksheet.getCell(1, index + 1);
-      cell.value = header;
-      cell.style = {
-        font: { bold: true },
-        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9E1F2' } }
-      };
-    });
-
-    // Datos de miembros
-    membersData.members.forEach((member, rowIndex) => {
-      const row = rowIndex + 2;
-      worksheet.getCell(row, 1).value = member.firstName;
-      worksheet.getCell(row, 2).value = member.lastName;
-      worksheet.getCell(row, 3).value = member.gender;
-      worksheet.getCell(row, 4).value = member.age;
-      worksheet.getCell(row, 5).value = member.maritalStatus;
-      worksheet.getCell(row, 6).value = member.spiritualStatus;
-      worksheet.getCell(row, 7).value = member.baptized ? 'Sí' : 'No';
-    });
-
-    // Ajustar anchos
-    worksheet.columns.forEach(column => {
-      column.width = 15;
-    });
-  }
-
-  /**
-   * Crea hojas de reporte de iglesia en Excel
-   */
-  async _createChurchReportSheets(workbook, reportData) {
-    // Hoja de grupos
-    const groupsSheet = workbook.addWorksheet('Grupos');
-    await this._createGroupsOverviewSheet(groupsSheet, reportData.groups);
-
-    // Hoja de métricas consolidadas
-    const consolidatedSheet = workbook.addWorksheet('Métricas Consolidadas');
-    await this._createConsolidatedMetricsSheet(consolidatedSheet, reportData.consolidatedMetrics);
-  }
-
-  /**
-   * Agrega contenido de reporte de grupo al PDF
-   */
-  async _addGroupReportToPDF(doc, reportData, yPosition) {
-    // Información del grupo
-    if (reportData.groupInfo) {
-      doc.fontSize(14).text('INFORMACIÓN DEL GRUPO', 50, yPosition);
-      yPosition += 25;
-      
-      doc.fontSize(11)
-        .text(`Nombre: ${reportData.groupInfo.name}`, 50, yPosition)
-        .text(`Tipo: ${reportData.groupInfo.type}`, 50, yPosition + 15)
-        .text(`Capacidad: ${reportData.groupInfo.currentCapacity}/${reportData.groupInfo.maxCapacity}`, 50, yPosition + 30)
-        .text(`Líder: ${reportData.groupInfo.leader?.firstName} ${reportData.groupInfo.leader?.lastName}`, 50, yPosition + 45);
-      
-      yPosition += 80;
-    }
-
-    // Resumen de estadísticas
-    if (reportData.members?.stats) {
-      doc.fontSize(14).text('ESTADÍSTICAS DE MIEMBROS', 50, yPosition);
-      yPosition += 25;
-      
-      doc.fontSize(11)
-        .text(`Total de miembros: ${reportData.members.stats.total}`, 50, yPosition)
-        .text(`Miembros activos: ${reportData.members.stats.active}`, 50, yPosition + 15)
-        .text(`Miembros bautizados: ${reportData.members.stats.baptized}`, 50, yPosition + 30);
-      
-      yPosition += 60;
-    }
-  }
-
-  /**
-   * Obtiene últimos 12 meses
-   */
-  _getLast12Months() {
-    const months = [];
-    const now = new Date();
-    
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({
-        month: date.getMonth() + 1,
-        year: date.getFullYear(),
-        label: date.toLocaleDateString('es-PE', { month: 'short', year: 'numeric' })
-      });
-    }
-    
-    return months;
-  }
-
-  /**
-   * Analiza tendencias de crecimiento
-   */
-  _analyzeGrowthTrends(growthData) {
-    const memberTrend = this._calculateTrendDirection(growthData.map(d => d.newMembers));
-    const studentTrend = this._calculateTrendDirection(growthData.map(d => d.newStudents));
-    const baptismTrend = this._calculateTrendDirection(growthData.map(d => d.baptisms));
-
-    return {
-      members: memberTrend,
-      students: studentTrend,
-      baptisms: baptismTrend,
-      overall: this._determineOverallTrend(memberTrend, studentTrend, baptismTrend)
-    };
-  }
-
-  /**
-   * Calcula dirección de tendencia
-   */
-  _calculateTrendDirection(values) {
-    if (values.length < 3) return 'insufficient_data';
-    
-    const recent = values.slice(-3);
-    const earlier = values.slice(0, 3);
-    
-    const recentAvg = calculationHelpers.average(recent);
-    const earlierAvg = calculationHelpers.average(earlier);
-    
-    const change = calculationHelpers.growthRate(recentAvg, earlierAvg);
-    
-    if (change > 10) return 'ascending';
-    if (change < -10) return 'descending';
-    return 'stable';
-  }
-
-  /**
-   * Determina tendencia general
-   */
-  _determineOverallTrend(memberTrend, studentTrend, baptismTrend) {
-    const trends = [memberTrend, studentTrend, baptismTrend];
-    const ascendingCount = trends.filter(t => t === 'ascending').length;
-    const descendingCount = trends.filter(t => t === 'descending').length;
-    
-    if (ascendingCount >= 2) return 'positive';
-    if (descendingCount >= 2) return 'concerning';
-    return 'stable';
   }
 }
 

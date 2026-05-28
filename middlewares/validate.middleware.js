@@ -195,6 +195,73 @@ const validateUser = [
 ];
 
 // =============================================
+// VALIDACIONES PARA ACTUALIZAR USUARIO
+// =============================================
+const validateUserUpdate = [
+  body('email')
+    .optional()
+    .isEmail().withMessage('Email inválido')
+    .normalizeEmail()
+    .custom(async (value, { req }) => {
+      // Verifica que el email sea único, excluyendo al usuario actual (req.params.id)
+      const isUnique = await checkUniqueEmail(value, req.params.id);
+      if (!isUnique) {
+        throw new Error('El email ya está registrado por otro usuario');
+      }
+      return true;
+    }),
+  
+  body('firstName')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 }).withMessage('El nombre debe tener entre 2 y 50 caracteres'),
+  
+  body('lastName')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 }).withMessage('El apellido debe tener entre 2 y 50 caracteres'),
+  
+  body('role')
+    .optional()
+    .isIn(['admin', 'director', 'leader', 'reader']).withMessage('Rol inválido'),
+  
+  body('password')
+    .optional()
+    .isLength({ min: 8 }).withMessage('La contraseña debe tener al menos 8 caracteres')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .withMessage('La contraseña debe contener al menos: 1 minúscula, 1 mayúscula, 1 número y 1 carácter especial'),
+
+  handleValidationErrors
+];
+
+// =============================================
+// VALIDACIONES PARA APROBACIÓN DE USUARIO
+// =============================================
+const validateApproval = [
+  body('isApproved')
+    .isBoolean().withMessage('isApproved es requerido y debe ser un valor booleano'),
+  
+  body('reason')
+    .optional()
+    .trim()
+    .isLength({ max: 255 }).withMessage('La razón de rechazo no puede exceder los 255 caracteres'),
+
+  handleValidationErrors
+];
+
+// =============================================
+// VALIDACIONES PARA RESETEO DE CONTRASEÑA
+// =============================================
+const validatePasswordReset = [
+  body('newPassword')
+    .isLength({ min: 8 }).withMessage('La nueva contraseña debe tener al menos 8 caracteres')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .withMessage('La nueva contraseña debe contener al menos: 1 min., 1 mayús., 1 número y 1 carácter especial'),
+
+  handleValidationErrors
+];
+
+// =============================================
 // VALIDACIONES PARA IGLESIAS
 // =============================================
 const validateChurch = [
@@ -752,6 +819,9 @@ module.exports = {
   
   // Validaciones de entidades
   validateUser,
+  validateUserUpdate, // <- AGREGADO
+  validateApproval,   // <- AGREGADO
+  validatePasswordReset, // <- AGREGADO
   validateChurch,
   validateGroup,
   validateMember,

@@ -9,7 +9,8 @@ const rateLimit = require('express-rate-limit');
 
 // Controladores y middleware
 const authController = require('../controllers/auth.controller');
-const authMiddleware = require('../middlewares/auth.middleware');
+// Importación corregida de auth.middleware
+const { verifyToken } = require('../middlewares/auth.middleware');
 const validateMiddleware = require('../middlewares/validate.middleware');
 const { body } = require('express-validator'); 
 const logger = require('../utils/logger');
@@ -46,9 +47,8 @@ const passwordLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 3, standardHe
 const resetLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 3, keyGenerator: (req) => `${req.ip}-${req.body?.email || 'unknown'}`, standardHeaders: true, legacyHeaders: false });
 
 // =============================================
-// 🔄 MIDDLEWARE DE LOGGING (MOVIDO AL INICIO)
+// 🔄 MIDDLEWARE DE LOGGING
 // =============================================
-// Ahora interceptará correctamente cada petición antes de evaluar las rutas
 router.use((req, res, next) => {
   logger.info(`Petición Auth: ${req.method} ${req.originalUrl} - IP: ${req.ip}`);
   next();
@@ -91,13 +91,14 @@ router.post('/initialize', validateMiddleware.sanitizeInput, authController.init
 // RUTAS PROTEGIDAS (REQUIEREN AUTENTICACIÓN)
 // =============================================
 
-router.get('/verify', authMiddleware.verifyToken, authController.verifyToken);
-router.post('/logout', authMiddleware.verifyToken, authController.logout);
-router.post('/change-password', passwordLimiter, authMiddleware.verifyToken, validateMiddleware.sanitizeInput, validateMiddleware.validateChangePassword, authController.changePassword);
-router.get('/profile', authMiddleware.verifyToken, authController.getProfile);
+// Reemplazado authMiddleware.verifyToken por verifyToken
+router.get('/verify', verifyToken, authController.verifyToken);
+router.post('/logout', verifyToken, authController.logout);
+router.post('/change-password', passwordLimiter, verifyToken, validateMiddleware.sanitizeInput, validateMiddleware.validateChangePassword, authController.changePassword);
+router.get('/profile', verifyToken, authController.getProfile);
 
 router.put('/profile',
-  authMiddleware.verifyToken,
+  verifyToken,
   validateMiddleware.sanitizeInput,
   [
     body('firstName').optional().trim().isLength({ min: 2, max: 50 }).withMessage('El nombre debe tener entre 2 y 50 caracteres').matches(/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/).withMessage('El nombre solo puede contener letras y espacios'),
@@ -128,7 +129,7 @@ router.get('/config', (req, res) => {
 });
 
 // =============================================
-// MANEJO DE ERRORES ESPECÍFICO PARA AUTH (DEBE SER EL FINAL)
+// MANEJO DE ERRORES ESPECÍFICO PARA AUTH
 // =============================================
 router.use((error, req, res, next) => {
   logger.error('Error en rutas de autenticación', { error: error.message, stack: error.stack, url: req.originalUrl, method: req.method, ip: req.ip, userId: req.user?.id || null });

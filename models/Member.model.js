@@ -372,6 +372,7 @@ module.exports = (sequelize, DataTypes) => {
       }
     }
   }, {
+    
     // =============================================
     // CONFIGURACIÓN DEL MODELO
     // =============================================
@@ -380,17 +381,20 @@ module.exports = (sequelize, DataTypes) => {
     paranoid: true, // Soft delete
     underscored: true,
     
-    // Índices para optimización
+    // Índices limpios, explícitos y con la propiedad fields garantizada en cada uno
     indexes: [
       {
-        fields: ['groupId', 'status']
+        name: 'idx_members_group_id_status',
+        fields: ['group_id', 'status']
       },
       {
-        fields: ['firstName', 'lastName']
+        name: 'idx_members_full_name',
+        fields: ['first_name', 'last_name']
       },
       {
-        fields: ['email'],
+        name: 'idx_members_email_unique',
         unique: true,
+        fields: ['email'], // <-- Asegurado que esté aquí
         where: {
           email: {
             [sequelize.Sequelize.Op.ne]: null
@@ -398,18 +402,23 @@ module.exports = (sequelize, DataTypes) => {
         }
       },
       {
-        fields: ['status', 'isActive']
+        name: 'idx_members_status_active',
+        fields: ['status', 'is_active']
       },
       {
-        fields: ['spiritualStatus']
+        name: 'idx_members_spiritual_status',
+        fields: ['spiritual_status']
       },
       {
-        fields: ['joinDate']
+        name: 'idx_members_join_date',
+        fields: ['join_date']
       },
       {
-        fields: ['dateOfBirth']
+        name: 'idx_members_date_of_birth',
+        fields: ['date_of_birth']
       },
       {
+        name: 'idx_members_location',
         fields: ['city', 'district']
       }
     ],
@@ -419,35 +428,23 @@ module.exports = (sequelize, DataTypes) => {
     // =============================================
     hooks: {
       beforeValidate: (member, options) => {
-        // Normalizar datos antes de validar
-        if (member.firstName) {
-          member.firstName = member.firstName.trim();
-        }
-        if (member.lastName) {
-          member.lastName = member.lastName.trim();
-        }
-        if (member.email) {
-          member.email = member.email.toLowerCase().trim();
-        }
+        if (member.firstName) member.firstName = member.firstName.trim();
+        if (member.lastName) member.lastName = member.lastName.trim();
+        if (member.email) member.email = member.email.toLowerCase().trim();
         
-        // Validar coherencia de fechas
         if (member.baptized && !member.baptismDate) {
           member.baptismDate = member.conversionDate || member.joinDate;
         }
       },
-      
       beforeCreate: (member, options) => {
         console.log(`👤 Creando nuevo miembro: ${member.firstName} ${member.lastName}`);
       },
-      
       afterCreate: (member, options) => {
         console.log(`✅ Miembro creado exitosamente: ${member.firstName} ${member.lastName} (ID: ${member.id})`);
       },
-      
       beforeUpdate: (member, options) => {
         console.log(`📝 Actualizando miembro: ${member.firstName} ${member.lastName}`);
       },
-      
       afterUpdate: (member, options) => {
         console.log(`✅ Miembro actualizado: ${member.firstName} ${member.lastName}`);
       }
@@ -458,14 +455,12 @@ module.exports = (sequelize, DataTypes) => {
   // DEFINIR RELACIONES
   // =============================================
   Member.associate = (models) => {
-    // Pertenece a un grupo
     Member.belongsTo(models.Group, {
       foreignKey: 'groupId',
       as: 'group',
       onDelete: 'CASCADE'
     });
 
-    // Tiene muchos indicadores espirituales
     Member.hasMany(models.Indicator, {
       foreignKey: 'memberId',
       as: 'indicators',
@@ -479,7 +474,6 @@ module.exports = (sequelize, DataTypes) => {
   Member.prototype.toJSON = function() {
     const values = Object.assign({}, this.get());
     
-    // Calcular edad
     if (values.dateOfBirth) {
       const today = new Date();
       const birthDate = new Date(values.dateOfBirth);
@@ -490,28 +484,19 @@ module.exports = (sequelize, DataTypes) => {
       }
     }
     
-    // Nombre completo
     values.fullName = `${values.firstName} ${values.lastName}`;
     
-    // Tiempo en el grupo
     if (values.joinDate) {
       const joinDate = new Date(values.joinDate);
       const today = new Date();
       const monthsInGroup = (today.getFullYear() - joinDate.getFullYear()) * 12 + 
-                           (today.getMonth() - joinDate.getMonth());
+                            (today.getMonth() - joinDate.getMonth());
       values.monthsInGroup = Math.max(0, monthsInGroup);
     }
     
-    // Formatear fechas
-    if (values.dateOfBirth) {
-      values.dateOfBirthFormatted = new Date(values.dateOfBirth).toLocaleDateString('es-PE');
-    }
-    if (values.joinDate) {
-      values.joinDateFormatted = new Date(values.joinDate).toLocaleDateString('es-PE');
-    }
-    if (values.baptismDate) {
-      values.baptismDateFormatted = new Date(values.baptismDate).toLocaleDateString('es-PE');
-    }
+    if (values.dateOfBirth) values.dateOfBirthFormatted = new Date(values.dateOfBirth).toLocaleDateString('es-PE');
+    if (values.joinDate) values.joinDateFormatted = new Date(values.joinDate).toLocaleDateString('es-PE');
+    if (values.baptismDate) values.baptismDateFormatted = new Date(values.baptismDate).toLocaleDateString('es-PE');
     
     return values;
   };
@@ -519,8 +504,6 @@ module.exports = (sequelize, DataTypes) => {
   // =============================================
   // MÉTODOS ESTÁTICOS
   // =============================================
-  
-  // Buscar miembros por grupo
   Member.findByGroup = async function(groupId, options = {}) {
     return await this.findAll({
       where: { 
@@ -540,7 +523,6 @@ module.exports = (sequelize, DataTypes) => {
     });
   };
 
-  // Obtener estadísticas de miembros
   Member.getStats = async function(groupId = null) {
     const whereClause = groupId ? { groupId } : {};
     
@@ -561,7 +543,6 @@ module.exports = (sequelize, DataTypes) => {
     return stats[0];
   };
 
-  // Buscar miembros por cumpleaños
   Member.findBirthdays = async function(month = null, day = null) {
     const whereClause = {
       isActive: true,

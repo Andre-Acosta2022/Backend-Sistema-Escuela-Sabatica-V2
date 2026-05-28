@@ -481,7 +481,7 @@ module.exports = (sequelize, DataTypes) => {
       }
     }
   }, {
-    // =============================================
+   // =============================================
     // CONFIGURACIÓN DEL MODELO
     // =============================================
     tableName: 'students',
@@ -489,34 +489,42 @@ module.exports = (sequelize, DataTypes) => {
     paranoid: true, // Soft delete
     underscored: true,
     
-    // Índices para optimización
+    // Índices corregidos a snake_case y blindados con nombres únicos
     indexes: [
       {
-        fields: ['groupId', 'status']
+        name: 'idx_students_group_id_status',
+        fields: ['group_id', 'status']
       },
       {
-        fields: ['teacherId']
+        name: 'idx_students_teacher_id',
+        fields: ['teacher_id']
       },
       {
-        fields: ['firstName', 'lastName']
+        name: 'idx_students_full_name',
+        fields: ['first_name', 'last_name']
       },
       {
+        name: 'idx_students_program_level',
         fields: ['program', 'level']
       },
       {
-        fields: ['status', 'isActive']
+        name: 'idx_students_status_active',
+        fields: ['status', 'is_active']
       },
       {
-        fields: ['enrollmentDate']
+        name: 'idx_students_enrollment_date',
+        fields: ['enrollment_date']
       },
       {
-        fields: ['graduationDate']
+        name: 'idx_students_graduation_date',
+        fields: ['graduation_date']
       },
       {
-        fields: ['certificateNumber'],
+        name: 'idx_students_certificate_number_unique',
         unique: true,
+        fields: ['certificate_number'],
         where: {
-          certificateNumber: {
+          certificate_number: {
             [sequelize.Sequelize.Op.ne]: null
           }
         }

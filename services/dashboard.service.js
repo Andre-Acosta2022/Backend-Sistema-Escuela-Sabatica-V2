@@ -1,8 +1,7 @@
 /**
  * DASHBOARD.SERVICE.JS - Servicio de Dashboard y Métricas
  * Sistema de Gestión Misionera
- * 
- * Maneja cálculos de KPIs, estadísticas consolidadas y datos para gráficos
+ * * Maneja cálculos de KPIs, estadísticas consolidadas y datos para gráficos
  * Incluye validaciones de seguridad por roles y optimizaciones de consultas
  */
 
@@ -70,12 +69,13 @@ class DashboardService {
         this._getAuthorizedCount(User, whereConditions.user, userRole)
       ]);
 
-      // Métricas del período actual
-      const currentPeriodMetrics = await this._getPeriodMetrics(whereConditions, dateRange);
-
-      // Comparación con período anterior
+      // Métricas del período actual y anterior en paralelo para evitar Pool Exhaustion
       const previousRange = this._getPreviousPeriodRange(dateRange);
-      const previousPeriodMetrics = await this._getPeriodMetrics(whereConditions, previousRange);
+      
+      const [currentPeriodMetrics, previousPeriodMetrics] = await Promise.all([
+        this._getPeriodMetrics(whereConditions, dateRange),
+        this._getPeriodMetrics(whereConditions, previousRange)
+      ]);
 
       // Cálculo de efectividad
       const effectiveness = this._calculateEffectiveness(currentPeriodMetrics, {
@@ -195,13 +195,14 @@ class DashboardService {
   }
 
   /**
-   * Obtiene datos para gráficos de tendencias
+   * Obtiene datos para gráficos de tendencias (Optimizado para evitar Pool Exhaustion)
    */
   async getTrendData(userRole, userId, filters = {}) {
     try {
       const whereConditions = this._buildWhereConditions(userRole, userId, filters);
       const months = this._getLast12Months();
 
+      // Resolución limpia y concurrente de los datos históricos mensuales mediante Promise.all global unificado
       const trendData = await Promise.all(months.map(async (month) => {
         const monthRange = dateHelpers.getMonthRange(month.year, month.month);
         
@@ -230,7 +231,6 @@ class DashboardService {
             },
             include: [{ model: Group, where: whereConditions.group }]
           }),
-          // Conversiones desde métricas de grupo
           GroupMetric.sum('newConversions', {
             where: {
               ...whereConditions.metric,
@@ -486,7 +486,6 @@ class DashboardService {
       if (userRole === ROLES.LEADER) {
         conditions.group = { ...conditions.group, leaderId: userId };
       } else if (userRole === ROLES.DIRECTOR) {
-        // Lógica para directores - pueden ver grupos de sus iglesias
         conditions.user = { ...conditions.user, id: userId };
       }
     }
@@ -569,7 +568,7 @@ class DashboardService {
   }
 
   /**
-   * Obtiene métricas de un período específico
+   * Obtiene métricas de un período específico (Optimizado con Promise.all)
    */
   async _getPeriodMetrics(whereConditions, dateRange) {
     try {

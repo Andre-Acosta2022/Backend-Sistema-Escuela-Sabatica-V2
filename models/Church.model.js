@@ -452,16 +452,20 @@ module.exports = (sequelize, DataTypes) => {
     // Índices para mejorar rendimiento
     indexes: [
       {
+        name: 'idx_churches_name_city_unique',
         unique: true,
         fields: ['name', 'city'] // Evitar iglesias duplicadas en la misma ciudad
       },
       {
+        name: 'idx_churches_city_state',
         fields: ['city', 'state']
       },
       {
+        name: 'idx_churches_status',
         fields: ['status']
       },
       {
+        name: 'idx_churches_created_at',
         fields: ['createdAt']
       }
     ],

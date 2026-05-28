@@ -13,7 +13,7 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
 // Importar middleware personalizados
-const errorMiddleware = require('./middlewares/error.middleware');
+const { errorHandler } = require('./middlewares/error.middleware');
 const logger = require('./utils/logger');
 
 // Importar rutas
@@ -229,6 +229,6 @@ app.use('*', (req, res) => {
 // ==============================================
 
 // Debe ser el último middleware
-app.use(errorMiddleware);
+app.use(errorHandler);
 
 module.exports = app;

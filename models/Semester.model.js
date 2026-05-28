@@ -81,10 +81,23 @@ module.exports = (sequelize, DataTypes) => {
     underscored: true,
     
     indexes: [
-      { fields: ['year', 'period'], unique: true },
-      { fields: ['isActive'] },
-      { fields: ['isCurrent'] },
-      { fields: ['startDate', 'endDate'] }
+     { 
+        name: 'idx_semesters_year_period_unique',
+        fields: ['year', 'period'], 
+        unique: true 
+      },
+      { 
+        name: 'idx_semesters_is_active',
+        fields: ['is_active'] // 🌟 CORREGIDO: Mapeo físico a la base de datos
+      },
+      { 
+        name: 'idx_semesters_is_current',
+        fields: ['is_current'] // 🌟 CORREGIDO: Mapeo físico a la base de datos
+      },
+      { 
+        name: 'idx_semesters_dates',
+        fields: ['start_date', 'end_date'] // 🌟 CORREGIDO: Mapeo físico a la base de datos
+      }
     ],
     
     hooks: {

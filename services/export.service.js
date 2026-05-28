@@ -1,8 +1,7 @@
 /**
  * EXPORT.SERVICE.JS - Servicio de exportación a Excel y PDF
  * Sistema de Gestión Misionera
- * 
- * Maneja la exportación de datos a diferentes formatos:
+ * * Maneja la exportación de datos a diferentes formatos:
  * - Excel (.xlsx) - Para análisis de datos
  * - PDF - Para reportes formales
  * - CSV - Para intercambio de datos
@@ -36,24 +35,24 @@ const exportGroupReportToExcel = async (reportData) => {
       { header: 'Observaciones', key: 'notes', width: 40 }
     ];
 
-    // Encabezado del reporte
+    // Encabezado del reporte con encadenamiento opcional para evitar rupturas por nulos
     summarySheet.addRow(['REPORTE CONSOLIDADO DE GRUPO', '', '']);
-    summarySheet.addRow([`Grupo: ${reportData.groupInfo.name}`, '', '']);
-    summarySheet.addRow([`Iglesia: ${reportData.groupInfo.church.name}`, '', '']);
-    summarySheet.addRow([`Líder: ${reportData.groupInfo.leader.name}`, '', '']);
-    summarySheet.addRow([`Generado: ${new Date(reportData.reportInfo.generatedAt).toLocaleString('es-ES')}`, '', '']);
+    summarySheet.addRow([`Grupo: ${reportData?.groupInfo?.name || 'N/A'}`, '', '']);
+    summarySheet.addRow([`Iglesia: ${reportData?.groupInfo?.church?.name || 'N/A'}`, '', '']);
+    summarySheet.addRow([`Líder: ${reportData?.groupInfo?.leader?.name || 'N/A'}`, '', '']);
+    summarySheet.addRow([`Generado: ${new Date(reportData?.reportInfo?.generatedAt || new Date()).toLocaleString('es-ES')}`, '', '']);
     summarySheet.addRow(['', '', '']); // Línea vacía
 
     // Datos del resumen ejecutivo
     const summaryData = [
-      ['Total de Miembros', reportData.executiveSummary.totalMembers, 'Miembros registrados en el grupo'],
-      ['Miembros Activos', reportData.executiveSummary.activeMembers, 'Miembros con participación regular'],
-      ['Tasa de Retención', `${reportData.executiveSummary.memberRetentionRate}%`, 'Porcentaje de miembros que permanecen activos'],
-      ['Puntuación Espiritual', reportData.executiveSummary.spiritualHealthScore, 'Promedio de indicadores espirituales (escala 1-5)'],
-      ['Asistencia Promedio', reportData.executiveSummary.averageAttendance, 'Asistencia promedio a reuniones'],
-      ['Estudiantes Bíblicos', reportData.executiveSummary.totalStudents, 'Total de estudiantes en programas bíblicos'],
-      ['Tasa de Graduación', `${reportData.executiveSummary.graduationRate}%`, 'Porcentaje de estudiantes que han completado estudios'],
-      ['Crecimiento Mensual', reportData.executiveSummary.monthlyGrowth, 'Nuevos miembros en los últimos 6 meses']
+      ['Total de Miembros', reportData?.executiveSummary?.totalMembers, 'Miembros registrados en el grupo'],
+      ['Miembros Activos', reportData?.executiveSummary?.activeMembers, 'Miembros con participación regular'],
+      ['Tasa de Retención', `${reportData?.executiveSummary?.memberRetentionRate || 0}%`, 'Porcentaje de miembros que permanecen activos'],
+      ['Puntuación Espiritual', reportData?.executiveSummary?.spiritualHealthScore, 'Promedio de indicadores espirituales (escala 1-5)'],
+      ['Asistencia Promedio', reportData?.executiveSummary?.averageAttendance, 'Asistencia promedio a reuniones'],
+      ['Estudiantes Bíblicos', reportData?.executiveSummary?.totalStudents, 'Total de estudiantes en programas bíblicos'],
+      ['Tasa de Graduación', `${reportData?.executiveSummary?.graduationRate || 0}%`, 'Porcentaje de estudiantes que han completado estudios'],
+      ['Crecimiento Mensual', reportData?.executiveSummary?.monthlyGrowth, 'Nuevos miembros en los últimos 6 meses']
     ];
 
     summaryData.forEach(row => summarySheet.addRow(row));
@@ -70,17 +69,21 @@ const exportGroupReportToExcel = async (reportData) => {
 
     // Distribución por género
     membersSheet.addRow(['Distribución por Género']);
-    Object.entries(reportData.memberStatistics.genderDistribution).forEach(([gender, count]) => {
-      membersSheet.addRow([gender, count]);
-    });
+    if (reportData?.memberStatistics?.genderDistribution) {
+      Object.entries(reportData.memberStatistics.genderDistribution).forEach(([gender, count]) => {
+        membersSheet.addRow([gender, count]);
+      });
+    }
     
     membersSheet.addRow(['']); // Línea vacía
     
     // Distribución por edad
     membersSheet.addRow(['Distribución por Edad']);
-    Object.entries(reportData.memberStatistics.ageDistribution).forEach(([ageGroup, count]) => {
-      membersSheet.addRow([ageGroup, count]);
-    });
+    if (reportData?.memberStatistics?.ageDistribution) {
+      Object.entries(reportData.memberStatistics.ageDistribution).forEach(([ageGroup, count]) => {
+        membersSheet.addRow([ageGroup, count]);
+      });
+    }
 
     // 3. HOJA DE INDICADORES ESPIRITUALES
     const spiritualSheet = workbook.addWorksheet('Indicadores Espirituales');
@@ -94,19 +97,21 @@ const exportGroupReportToExcel = async (reportData) => {
     spiritualSheet.addRow(['INDICADORES ESPIRITUALES']);
     spiritualSheet.addRow(['']);
 
-    reportData.spiritualIndicators.byType.forEach(indicator => {
-      if (indicator.count > 0) {
-        spiritualSheet.addRow([
-          getIndicatorTypeName(indicator.type),
-          indicator.average,
-          indicator.count
-        ]);
-      }
-    });
+    if (reportData?.spiritualIndicators?.byType) {
+      reportData.spiritualIndicators.byType.forEach(indicator => {
+        if (indicator.count > 0) {
+          spiritualSheet.addRow([
+            getIndicatorTypeName(indicator.type),
+            indicator.average,
+            indicator.count
+          ]);
+        }
+      });
+    }
 
     // Resumen general
     spiritualSheet.addRow(['']);
-    spiritualSheet.addRow(['Promedio General', reportData.spiritualIndicators.summary.overallAverage, reportData.spiritualIndicators.summary.totalEvaluations]);
+    spiritualSheet.addRow(['Promedio General', reportData?.spiritualIndicators?.summary?.overallAverage, reportData?.spiritualIndicators?.summary?.totalEvaluations]);
 
     // 4. HOJA DE MÉTRICAS DE DESEMPEÑO
     const metricsSheet = workbook.addWorksheet('Métricas Desempeño');
@@ -121,16 +126,16 @@ const exportGroupReportToExcel = async (reportData) => {
     metricsSheet.addRow(['']);
 
     const metricsData = [
-      ['Asistencia Promedio', reportData.performanceMetrics.summary.averageAttendance, 'Asistencia promedio por reunión'],
-      ['Visitantes Promedio', reportData.performanceMetrics.summary.averageNewVisitors, 'Nuevos visitantes promedio por reunión'],
-      ['Conversiones Promedio', reportData.performanceMetrics.summary.averageConversions, 'Conversiones promedio registradas'],
-      ['Total Ofrendas', `${reportData.performanceMetrics.summary.totalOfferings}`, 'Total de ofrendas registradas'],
-      ['Total Reportes', reportData.performanceMetrics.summary.totalReports, 'Cantidad de reportes registrados']
+      ['Asistencia Promedio', reportData?.performanceMetrics?.summary?.averageAttendance, 'Asistencia promedio por reunión'],
+      ['Visitantes Promedio', reportData?.performanceMetrics?.summary?.averageNewVisitors, 'Nuevos visitantes promedio por reunión'],
+      ['Conversiones Promedio', reportData?.performanceMetrics?.summary?.averageConversions, 'Conversiones promedio registradas'],
+      ['Total Ofrendas', `${reportData?.performanceMetrics?.summary?.totalOfferings || 0}`, 'Total de ofrendas registradas'],
+      ['Total Reportes', reportData?.performanceMetrics?.summary?.totalReports, 'Cantidad de reportes registrados']
     ];
 
     metricsData.forEach(row => metricsSheet.addRow(row));
 
-    // 5. HOJA DE ESTUDIANTES BÍBLICOS
+    // 5. HOJA DE ESTADÍSTICAS DE ESTUDIANTES BÍBLICOS
     const studentsSheet = workbook.addWorksheet('Estudiantes Bíblicos');
     
     studentsSheet.columns = [
@@ -142,20 +147,22 @@ const exportGroupReportToExcel = async (reportData) => {
     studentsSheet.addRow(['ESTUDIANTES BÍBLICOS']);
     studentsSheet.addRow(['']);
 
-    reportData.bibleStudents.byProgram.forEach(program => {
-      studentsSheet.addRow([
-        program.program,
-        program.count,
-        `${program.averageProgress}%`
-      ]);
-    });
+    if (reportData?.bibleStudents?.byProgram) {
+      reportData.bibleStudents.byProgram.forEach(program => {
+        studentsSheet.addRow([
+          program.program,
+          program.count,
+          `${program.averageProgress}%`
+        ]);
+      });
+    }
 
     // Resumen general
     studentsSheet.addRow(['']);
     studentsSheet.addRow(['RESUMEN GENERAL']);
-    studentsSheet.addRow(['Total Estudiantes', reportData.bibleStudents.summary.totalStudents]);
-    studentsSheet.addRow(['Graduados', reportData.bibleStudents.summary.graduatedStudents]);
-    studentsSheet.addRow(['Progreso Promedio General', `${reportData.bibleStudents.summary.averageProgress}%`]);
+    studentsSheet.addRow(['Total Estudiantes', reportData?.bibleStudents?.summary?.totalStudents]);
+    studentsSheet.addRow(['Graduados', reportData?.bibleStudents?.summary?.graduatedStudents]);
+    studentsSheet.addRow(['Progreso Promedio General', `${reportData?.bibleStudents?.summary?.averageProgress || 0}%`]);
 
     // Aplicar estilos generales
     workbook.worksheets.forEach(worksheet => {
@@ -188,8 +195,8 @@ const exportGroupReportToExcel = async (reportData) => {
     // Generar buffer del archivo
     const buffer = await workbook.xlsx.writeBuffer();
     
-    logger.info(`Reporte Excel generado para grupo ${reportData.groupInfo.name}`, {
-      groupId: reportData.groupInfo.id,
+    logger.info(`Reporte Excel generado para grupo ${reportData?.groupInfo?.name || 'Desconocido'}`, {
+      groupId: reportData?.groupInfo?.id,
       sheets: workbook.worksheets.length,
       size: buffer.length
     });
@@ -197,7 +204,7 @@ const exportGroupReportToExcel = async (reportData) => {
     return {
       success: true,
       buffer,
-      filename: `reporte_grupo_${reportData.groupInfo.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`,
+      filename: `reporte_grupo_${(reportData?.groupInfo?.name || 'grupo').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     };
 
@@ -231,8 +238,8 @@ const exportMembersToExcel = async (members, groupInfo) => {
     ];
 
     // Encabezado del reporte
-    worksheet.insertRow(1, [`LISTA DE MIEMBROS - ${groupInfo.name}`]);
-    worksheet.insertRow(2, [`Iglesia: ${groupInfo.church.name}`]);
+    worksheet.insertRow(1, [`LISTA DE MIEMBROS - ${groupInfo?.name || 'Sin Nombre'}`]);
+    worksheet.insertRow(2, [`Iglesia: ${groupInfo?.church?.name || 'N/A'}`]);
     worksheet.insertRow(3, [`Generado: ${new Date().toLocaleString('es-ES')}`]);
     worksheet.insertRow(4, []);
 
@@ -243,23 +250,25 @@ const exportMembersToExcel = async (members, groupInfo) => {
     });
 
     // Agregar datos de miembros
-    members.forEach((member, index) => {
-      worksheet.addRow({
-        id: member.id,
-        memberCode: member.memberCode,
-        firstName: member.firstName,
-        lastName: member.lastName,
-        email: member.email,
-        phone: member.phone,
-        birthDate: member.birthDate ? new Date(member.birthDate).toLocaleDateString('es-ES') : '',
-        gender: member.gender,
-        maritalStatus: member.maritalStatus,
-        occupation: member.occupation,
-        baptismDate: member.baptismDate ? new Date(member.baptismDate).toLocaleDateString('es-ES') : '',
-        isActive: member.isActive ? 'Activo' : 'Inactivo',
-        createdAt: new Date(member.createdAt).toLocaleDateString('es-ES')
+    if (members && Array.isArray(members)) {
+      members.forEach((member) => {
+        worksheet.addRow({
+          id: member.id,
+          memberCode: member.memberCode,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          email: member.email,
+          phone: member.phone,
+          birthDate: member.birthDate ? new Date(member.birthDate).toLocaleDateString('es-ES') : '',
+          gender: member.gender,
+          maritalStatus: member.maritalStatus,
+          occupation: member.occupation,
+          baptismDate: member.baptismDate ? new Date(member.baptismDate).toLocaleDateString('es-ES') : '',
+          isActive: member.isActive ? 'Activo' : 'Inactivo',
+          createdAt: member.createdAt ? new Date(member.createdAt).toLocaleDateString('es-ES') : ''
+        });
       });
-    });
+    }
 
     // Aplicar estilos
     headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -275,7 +284,7 @@ const exportMembersToExcel = async (members, groupInfo) => {
     // Auto-filtro para los datos
     worksheet.autoFilter = {
       from: 'A5',
-      to: worksheet.getColumn(worksheet.columns.length).letter + (5 + members.length)
+      to: worksheet.getColumn(worksheet.columns.length).letter + (5 + (members?.length || 0))
     };
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -283,7 +292,7 @@ const exportMembersToExcel = async (members, groupInfo) => {
     return {
       success: true,
       buffer,
-      filename: `miembros_${groupInfo.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`,
+      filename: `miembros_${(groupInfo?.name || 'grupo').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     };
 
@@ -293,165 +302,168 @@ const exportMembersToExcel = async (members, groupInfo) => {
   }
 };
 
-// =============================================================================
-// EXPORTACIÓN A PDF
-// =============================================================================
-
-// Exportar reporte de grupo a PDF
+// Exportar reporte de grupo a PDF (Corregido para evitar pérdidas de Stream y fugas de memoria)
 const exportGroupReportToPDF = async (reportData) => {
-  try {
-    const doc = new PDFDocument({ margin: 50 });
-    const chunks = [];
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks = [];
 
-    // Capturar el contenido del PDF en chunks
-    doc.on('data', chunk => chunks.push(chunk));
+      // Capturar el contenido del PDF en chunks de manera segura dentro del contexto de la Promesa
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('error', err => reject(err));
 
-    // PÁGINA 1: PORTADA Y RESUMEN EJECUTIVO
-    doc.fontSize(20).font('Helvetica-Bold').text('REPORTE CONSOLIDADO DE GRUPO', { align: 'center' });
-    doc.moveDown();
-    
-    doc.fontSize(16).font('Helvetica-Bold').text(`${reportData.groupInfo.name}`, { align: 'center' });
-    doc.fontSize(14).font('Helvetica').text(`${reportData.groupInfo.church.name}`, { align: 'center' });
-    doc.moveDown();
-
-    // Información del grupo
-    doc.fontSize(12).font('Helvetica-Bold').text('Información del Grupo:', { underline: true });
-    doc.font('Helvetica');
-    doc.text(`Líder: ${reportData.groupInfo.leader.name}`);
-    doc.text(`Categoría: ${reportData.groupInfo.category}`);
-    doc.text(`Capacidad: ${reportData.groupInfo.capacity} personas`);
-    doc.text(`Ubicación: ${reportData.groupInfo.location}`);
-    doc.text(`Horario: ${reportData.groupInfo.schedule}`);
-    doc.moveDown();
-
-    // Resumen ejecutivo
-    doc.fontSize(12).font('Helvetica-Bold').text('Resumen Ejecutivo:', { underline: true });
-    doc.font('Helvetica');
-    
-    const summaryData = [
-      ['Total de Miembros:', reportData.executiveSummary.totalMembers],
-      ['Miembros Activos:', reportData.executiveSummary.activeMembers],
-      ['Tasa de Retención:', `${reportData.executiveSummary.memberRetentionRate}%`],
-      ['Puntuación Espiritual:', `${reportData.executiveSummary.spiritualHealthScore}/5.0`],
-      ['Asistencia Promedio:', reportData.executiveSummary.averageAttendance],
-      ['Estudiantes Bíblicos:', reportData.executiveSummary.totalStudents],
-      ['Tasa de Graduación:', `${reportData.executiveSummary.graduationRate}%`],
-      ['Crecimiento (6 meses):', `${reportData.executiveSummary.monthlyGrowth} nuevos miembros`]
-    ];
-
-    let yPosition = doc.y;
-    summaryData.forEach(([label, value]) => {
-      doc.text(label, 50, yPosition, { width: 200, continued: true });
-      doc.text(String(value), 250, yPosition);
-      yPosition += 20;
-    });
-
-    // PÁGINA 2: ESTADÍSTICAS DETALLADAS
-    doc.addPage();
-    doc.fontSize(16).font('Helvetica-Bold').text('ESTADÍSTICAS DETALLADAS', { align: 'center' });
-    doc.moveDown();
-
-    // Distribución por género
-    doc.fontSize(12).font('Helvetica-Bold').text('Distribución por Género:', { underline: true });
-    doc.font('Helvetica');
-    Object.entries(reportData.memberStatistics.genderDistribution).forEach(([gender, count]) => {
-      doc.text(`${gender}: ${count} personas`);
-    });
-    doc.moveDown();
-
-    // Distribución por edad
-    doc.fontSize(12).font('Helvetica-Bold').text('Distribución por Edad:', { underline: true });
-    doc.font('Helvetica');
-    Object.entries(reportData.memberStatistics.ageDistribution).forEach(([ageGroup, count]) => {
-      doc.text(`${ageGroup}: ${count} personas`);
-    });
-    doc.moveDown();
-
-    // Indicadores espirituales
-    doc.fontSize(12).font('Helvetica-Bold').text('Indicadores Espirituales:', { underline: true });
-    doc.font('Helvetica');
-    
-    reportData.spiritualIndicators.byType.forEach(indicator => {
-      if (indicator.count > 0) {
-        const typeName = getIndicatorTypeName(indicator.type);
-        doc.text(`${typeName}: ${indicator.average}/5.0 (${indicator.count} evaluaciones)`);
-      }
-    });
-    doc.moveDown();
-
-    // PÁGINA 3: MÉTRICAS Y ANÁLISIS
-    doc.addPage();
-    doc.fontSize(16).font('Helvetica-Bold').text('MÉTRICAS Y ANÁLISIS', { align: 'center' });
-    doc.moveDown();
-
-    // Métricas de desempeño
-    doc.fontSize(12).font('Helvetica-Bold').text('Métricas de Desempeño:', { underline: true });
-    doc.font('Helvetica');
-    doc.text(`Asistencia Promedio: ${reportData.performanceMetrics.summary.averageAttendance}`);
-    doc.text(`Nuevos Visitantes: ${reportData.performanceMetrics.summary.averageNewVisitors}`);
-    doc.text(`Conversiones: ${reportData.performanceMetrics.summary.averageConversions}`);
-    doc.text(`Total Ofrendas: ${reportData.performanceMetrics.summary.totalOfferings}`);
-    doc.moveDown();
-
-    // Estudiantes bíblicos
-    doc.fontSize(12).font('Helvetica-Bold').text('Programas de Estudio Bíblico:', { underline: true });
-    doc.font('Helvetica');
-    
-    reportData.bibleStudents.byProgram.forEach(program => {
-      doc.text(`${program.program}: ${program.count} estudiantes (${program.averageProgress}% progreso)`);
-    });
-    doc.moveDown();
-
-    // Análisis de crecimiento
-    if (reportData.growthAnalysis.monthlyGrowth.length > 0) {
-      doc.fontSize(12).font('Helvetica-Bold').text('Análisis de Crecimiento (Últimos 6 meses):', { underline: true });
-      doc.font('Helvetica');
-      
-      reportData.growthAnalysis.monthlyGrowth.forEach(month => {
-        const monthName = new Date(month.month).toLocaleDateString('es-ES', { 
-          year: 'numeric', 
-          month: 'long' 
-        });
-        doc.text(`${monthName}: ${month.newMembers} nuevos miembros`);
-      });
-      doc.text(`Total crecimiento: ${reportData.growthAnalysis.totalGrowthSixMonths} nuevos miembros`);
-    }
-
-    // Pie de página
-    doc.fontSize(8).font('Helvetica').text(
-      `Reporte generado el ${new Date(reportData.reportInfo.generatedAt).toLocaleString('es-ES')} por ${reportData.reportInfo.generatedBy.name}`,
-      50,
-      doc.page.height - 50,
-      { align: 'center' }
-    );
-
-    doc.end();
-
-    // Esperar a que se complete la generación del PDF
-    return new Promise((resolve, reject) => {
       doc.on('end', () => {
         const buffer = Buffer.concat(chunks);
         
-        logger.info(`Reporte PDF generado para grupo ${reportData.groupInfo.name}`, {
-          groupId: reportData.groupInfo.id,
+        logger.info(`Reporte PDF generado para grupo ${reportData?.groupInfo?.name || 'Desconocido'}`, {
+          groupId: reportData?.groupInfo?.id,
           size: buffer.length
         });
 
         resolve({
           success: true,
           buffer,
-          filename: `reporte_grupo_${reportData.groupInfo.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+          filename: `reporte_grupo_${(reportData?.groupInfo?.name || 'grupo').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
           mimeType: 'application/pdf'
         });
       });
 
-      doc.on('error', reject);
-    });
+      // PÁGINA 1: PORTADA Y RESUMEN EJECUTIVO
+      doc.fontSize(20).font('Helvetica-Bold').text('REPORTE CONSOLIDADO DE GRUPO', { align: 'center' });
+      doc.moveDown();
+      
+      doc.fontSize(16).font('Helvetica-Bold').text(`${reportData?.groupInfo?.name || 'N/A'}`, { align: 'center' });
+      doc.fontSize(14).font('Helvetica').text(`${reportData?.groupInfo?.church?.name || 'N/A'}`, { align: 'center' });
+      doc.moveDown();
 
-  } catch (error) {
-    logger.error('Error al generar reporte PDF:', error);
-    throw error;
-  }
+      // Información del grupo
+      doc.fontSize(12).font('Helvetica-Bold').text('Información del Grupo:', { underline: true });
+      doc.font('Helvetica');
+      doc.text(`Líder: ${reportData?.groupInfo?.leader?.name || 'N/A'}`);
+      doc.text(`Categoría: ${reportData?.groupInfo?.category || 'N/A'}`);
+      doc.text(`Capacidad: ${reportData?.groupInfo?.capacity || 0} personas`);
+      doc.text(`Ubicación: ${reportData?.groupInfo?.location || 'N/A'}`);
+      doc.text(`Horario: ${reportData?.groupInfo?.schedule || 'N/A'}`);
+      doc.moveDown();
+
+      // Resumen ejecutivo
+      doc.fontSize(12).font('Helvetica-Bold').text('Resumen Ejecutivo:', { underline: true });
+      doc.font('Helvetica');
+      
+      const summaryData = [
+        ['Total de Miembros:', reportData?.executiveSummary?.totalMembers],
+        ['Miembros Activos:', reportData?.executiveSummary?.activeMembers],
+        ['Tasa de Retención:', `${reportData?.executiveSummary?.memberRetentionRate || 0}%`],
+        ['Puntuación Espiritual:', `${reportData?.executiveSummary?.spiritualHealthScore || 0}/5.0`],
+        ['Asistencia Promedio:', reportData?.executiveSummary?.averageAttendance],
+        ['Estudiantes Bíblicos:', reportData?.executiveSummary?.totalStudents],
+        ['Tasa de Graduación:', `${reportData?.executiveSummary?.graduationRate || 0}%`],
+        ['Crecimiento (6 meses):', `${reportData?.executiveSummary?.monthlyGrowth || 0} nuevos miembros`]
+      ];
+
+      // yPosition manejado secuencialmente en el documento para evitar superposiciones de flujo de texto
+      summaryData.forEach(([label, value]) => {
+        doc.text(label, 50, doc.y, { width: 200, continued: true });
+        doc.text(String(value || 0), 250, doc.y);
+      });
+      doc.moveDown();
+
+      // PÁGINA 2: ESTADÍSTICAS DETALLADAS
+      doc.addPage();
+      doc.fontSize(16).font('Helvetica-Bold').text('ESTADÍSTICAS DETALLADAS', { align: 'center' });
+      doc.moveDown();
+
+      // Distribución por género
+      doc.fontSize(12).font('Helvetica-Bold').text('Distribución por Género:', { underline: true });
+      doc.font('Helvetica');
+      if (reportData?.memberStatistics?.genderDistribution) {
+        Object.entries(reportData.memberStatistics.genderDistribution).forEach(([gender, count]) => {
+          doc.text(`${gender}: ${count} personas`);
+        });
+      }
+      doc.moveDown();
+
+      // Distribución por edad
+      doc.fontSize(12).font('Helvetica-Bold').text('Distribución por Edad:', { underline: true });
+      doc.font('Helvetica');
+      if (reportData?.memberStatistics?.ageDistribution) {
+        Object.entries(reportData.memberStatistics.ageDistribution).forEach(([ageGroup, count]) => {
+          doc.text(`${ageGroup}: ${count} personas`);
+        });
+      }
+      doc.moveDown();
+
+      // Indicadores espirituales
+      doc.fontSize(12).font('Helvetica-Bold').text('Indicadores Espirituales:', { underline: true });
+      doc.font('Helvetica');
+      
+      if (reportData?.spiritualIndicators?.byType) {
+        reportData.spiritualIndicators.byType.forEach(indicator => {
+          if (indicator.count > 0) {
+            const typeName = getIndicatorTypeName(indicator.type);
+            doc.text(`${typeName}: ${indicator.average}/5.0 (${indicator.count} evaluaciones)`);
+          }
+        });
+      }
+      doc.moveDown();
+
+      // PÁGINA 3: MÉTRICAS Y ANÁLISIS
+      doc.addPage();
+      doc.fontSize(16).font('Helvetica-Bold').text('MÉTRICAS Y ANÁLISIS', { align: 'center' });
+      doc.moveDown();
+
+      // Métricas de desempeño
+      doc.fontSize(12).font('Helvetica-Bold').text('Métricas de Desempeño:', { underline: true });
+      doc.font('Helvetica');
+      doc.text(`Asistencia Promedio: ${reportData?.performanceMetrics?.summary?.averageAttendance || 0}`);
+      doc.text(`Nuevos Visitantes: ${reportData?.performanceMetrics?.summary?.averageNewVisitors || 0}`);
+      doc.text(`Conversiones: ${reportData?.performanceMetrics?.summary?.averageConversions || 0}`);
+      doc.text(`Total Ofrendas: ${reportData?.performanceMetrics?.summary?.totalOfferings || 0}`);
+      doc.moveDown();
+
+      // Estudiantes bíblicos
+      doc.fontSize(12).font('Helvetica-Bold').text('Programas de Estudio Bíblico:', { underline: true });
+      doc.font('Helvetica');
+      
+      if (reportData?.bibleStudents?.byProgram) {
+        reportData.bibleStudents.byProgram.forEach(program => {
+          doc.text(`${program.program}: ${program.count} estudiantes (${program.averageProgress}% progreso)`);
+        });
+      }
+      doc.moveDown();
+
+      // Análisis de crecimiento
+      if (reportData?.growthAnalysis?.monthlyGrowth && reportData.growthAnalysis.monthlyGrowth.length > 0) {
+        doc.fontSize(12).font('Helvetica-Bold').text('Análisis de Crecimiento (Últimos 6 meses):', { underline: true });
+        doc.font('Helvetica');
+        
+        reportData.growthAnalysis.monthlyGrowth.forEach(month => {
+          const monthName = new Date(month.month).toLocaleDateString('es-ES', { 
+            year: 'numeric', 
+            month: 'long' 
+          });
+          doc.text(`${monthName}: ${month.newMembers} nuevos miembros`);
+        });
+        doc.text(`Total crecimiento: ${reportData.growthAnalysis.totalGrowthSixMonths} nuevos miembros`);
+      }
+
+      // Pie de página
+      doc.fontSize(8).font('Helvetica').text(
+        `Reporte generado el ${new Date(reportData?.reportInfo?.generatedAt || new Date()).toLocaleString('es-ES')} por ${reportData?.reportInfo?.generatedBy?.name || 'Sistema'}`,
+        50,
+        doc.page.height - 50,
+        { align: 'center' }
+      );
+
+      // El cierre definitivo del stream ocurre siempre al final de las operaciones de renderizado escritas
+      doc.end();
+
+    } catch (error) {
+      logger.error('Error al generar reporte PDF:', error);
+      reject(error);
+    }
+  });
 };
 
 // =============================================================================
